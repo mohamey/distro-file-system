@@ -1,5 +1,3 @@
-module Main where
-
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -8,6 +6,10 @@ module Main where
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeFamilies #-}
+
+module Main where
+
 
 import Lib
 
@@ -54,6 +56,7 @@ users1 =
   ]
 
 type UserAPI1 = "users" :> Get '[JSON] [User]
+-- type UserAPI1 = "users" :> Get [JSON] [User]
 
 server1 :: Server UserAPI1
 server1 = return users1

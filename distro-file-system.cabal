@@ -42,6 +42,7 @@ executable distro-file-system-exe
                      , wai >= 3.2
                      , warp
                      , servant-server >= 0.8
+                     , servant >= 0.8
                      , directory
                      , blaze-markup >= 0.7
                      , blaze-html >= 0.8
