@@ -19,7 +19,7 @@ import Control.Monad.Reader
 import Data.Aeson.Compat
 import Data.Aeson.Types
 import Data.Attoparsec.ByteString
-import Data.ByteString (ByteString)
+import qualified Data.ByteString as B
 import Data.List
 import Data.Maybe
 import Data.String.Conversions
@@ -30,6 +30,7 @@ import Network.HTTP.Media ((//), (/:))
 import Network.Wai
 import Network.Wai.Handler.Warp
 import Servant
+import Servant.Utils.StaticFiles
 import System.Directory
 import Text.Blaze
 import Text.Blaze.Html.Renderer.Utf8
@@ -54,7 +55,7 @@ users1 =
   ]
 
 type UserAPI1 = "users" :> Get '[JSON] [User]
--- type UserAPI1 = "users" :> Get [JSON] [User]
+
 
 server1 :: Server UserAPI1
 server1 = return users1
@@ -65,5 +66,24 @@ userAPI = Proxy
 app1 :: Application
 app1 = serve userAPI server1
 
+-- data ServerFile = ServerFile
+--   {
+--     fileName :: String
+--     , file :: B.ByteString
+--   } deriving (Eq, Show, Generic)
+
+-- instance ToJSON ServerFile
+
+newtype BS = BS [B.ByteString]
+  deriving Generic
+
+type FileAPI = "file" :> Raw
+
+-- fileAPI :: Proxy FileAPI
+-- fileAPI = Proxy
+
+server2 :: Server FileAPI
+server2 = serveDirectory "file"
+
 runServer :: Int -> IO ()
-runServer port = run port app1
+runServer port = run port server2
