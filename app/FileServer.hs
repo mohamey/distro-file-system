@@ -11,41 +11,77 @@
 module FileServer
   (runServer) where
 
+import Control.Monad.IO.Class
+import Data.Aeson
+import Data.Bson
+import qualified Data.ByteString as B
+
+import Database.MongoDB
+import Network.HTTP.Types.Status
+import Network.Wai.Handler.Warp
+import Network.Wai
+
 import Prelude ()
 import Prelude.Compat
 
--- import Control.Monad.Except
--- import Control.Monad.Reader
--- import Data.Aeson.Compat
--- import Data.Aeson.Types
--- import Data.Attoparsec.ByteString
--- import Data.ByteString
--- import Data.List
--- import Data.Maybe
--- import Data.String.Conversions
--- import Data.Time.Calendar
--- import GHC.Generics
--- import Lucid
--- import Network.HTTP.Media ((//), (/:))
--- import Network.Wai
-import Network.Wai.Handler.Warp
 import Servant
--- import System.Directory
--- import Text.Blaze
--- import Text.Blaze.Html.Renderer.Utf8
--- import qualified Data.Aeson.Parser
--- import qualified Text.Blaze.Html
 
-type FileAPI = "files" :> Raw
 
-fileAPI :: Proxy FileAPI
-fileAPI = Proxy
+-- data FileObject = FileObject {
+--   name :: String,
+--   fileBytes :: B.ByteString
+-- }
 
-server1 :: Server FileAPI
-server1 = serveDirectory "static-files"
+-- type API = "file" :> ReqBody '[B.ByteString] B.ByteString:> Post '[JSON] Bool
 
-app1 :: Application
-app1 = serve fileAPI server1
+-- api :: Proxy API
+-- api = Proxy
 
-runServer :: Int -> IO ()
-runServer port = run port app1
+-- server :: Server API
+-- server = postFile
+
+--   where
+--     postFile :: B.ByteString -> Handler Bool
+--     postFile bs = liftIO $ do
+--       -- Convert bytestring to file
+--       B.writeFile ".temp/file" bs
+      
+--       -- Print out the files name
+--       -- Return true
+--       return True
+
+-- app :: Application
+-- app = serve api server
+
+-- server1 :: Server FileAPI
+-- server1 = serveDirectory "static-files"
+
+-- app1 :: Application
+-- app1 = serve fileAPI server1
+
+-- runServer :: Int -> IO ()
+-- runServer port = run port app
+
+-- data GetResponse = GetResponse {
+--   successful :: Bool,
+--   fileBytes :: B.ByteString
+-- }
+
+
+-- Handle GET requests for documents in mongodb
+type API = "file" :> QueryParam "name" String :> Get '[JSON] Response
+
+api :: Proxy API
+api = Proxy
+
+server :: Server API
+server = getFile
+
+  where
+    getFile :: Maybe String -> Handler Response
+    getFile (Just name) =  do
+      bs <- B.readFile name
+      -- putStrLn $ "Got the file"
+      return responseLBS ok200 [] bs
+
+app = serve api server
