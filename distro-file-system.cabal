@@ -46,8 +46,10 @@ executable distro-file-system
                      , mtl
                      , servant
                      , servant-server
+                     , split
                      , string-conversions
                      , time
+                     , text
                      , wai
                      , warp
   default-language:    Haskell2010

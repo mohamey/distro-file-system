@@ -8,80 +8,68 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module FileServer
-  (runServer) where
+module FileServer where
 
 import Control.Monad.IO.Class
 import Data.Aeson
 import Data.Bson
+import Data.List
+import Data.List.Split
+import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy.IO as TLIO
 import qualified Data.ByteString as B
-
 import Database.MongoDB
+import GHC.Generics
 import Network.HTTP.Types.Status
 import Network.Wai.Handler.Warp
 import Network.Wai
-
 import Prelude ()
-import Prelude.Compat
-
+import Prelude.Compat 
 import Servant
+import System.Directory
 
+-- A representation of files on the server
+-- This will be stored in the mongodb database
+data FileObject = FileObject {
+  path :: String,
+  fileContent :: TL.Text
+} deriving Generic
 
--- data FileObject = FileObject {
---   name :: String,
---   fileBytes :: B.ByteString
--- }
+instance FromJSON FileObject
+instance ToJSON FileObject
 
--- type API = "file" :> ReqBody '[B.ByteString] B.ByteString:> Post '[JSON] Bool
+-- This will be returned on a post request
+data PostResponse = PostResponse {
+  result :: Bool,
+  message :: String
+} deriving Generic
 
--- api :: Proxy API
--- api = Proxy
+instance FromJSON PostResponse
+instance ToJSON PostResponse
 
--- server :: Server API
--- server = postFile
-
---   where
---     postFile :: B.ByteString -> Handler Bool
---     postFile bs = liftIO $ do
---       -- Convert bytestring to file
---       B.writeFile ".temp/file" bs
-      
---       -- Print out the files name
---       -- Return true
---       return True
-
--- app :: Application
--- app = serve api server
-
--- server1 :: Server FileAPI
--- server1 = serveDirectory "static-files"
-
--- app1 :: Application
--- app1 = serve fileAPI server1
-
--- runServer :: Int -> IO ()
--- runServer port = run port app
-
--- data GetResponse = GetResponse {
---   successful :: Bool,
---   fileBytes :: B.ByteString
--- }
-
-
--- Handle GET requests for documents in mongodb
-type API = "file" :> QueryParam "name" String :> Get '[JSON] Response
+-- The API Definition
+type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] PostResponse
+         :<|> "files" :> Raw
 
 api :: Proxy API
 api = Proxy
 
 server :: Server API
-server = getFile
+server = uploadNewFile
+    :<|> serveDirectory "static-files" -- Serve files from the static-files directory for get requests
 
   where
-    getFile :: Maybe String -> Handler Response
-    getFile (Just name) =  do
-      bs <- B.readFile name
-      -- putStrLn $ "Got the file"
-      return responseLBS ok200 [] bs
+    -- Upload a new file to the server
+    uploadNewFile :: FileObject -> Handler PostResponse
+    uploadNewFile newFile = liftIO $ do
+      let dirParts = splitOn "/" (path newFile)
+      let directory = "static-files" ++ (intercalate "/" (init dirParts)) -- Get the directory for the new file
+      createDirectoryIfMissing True directory -- Creates parent directories too
+      TLIO.writeFile ("static-files" ++ path newFile) (fileContent newFile)
+      return PostResponse {result=True, message="Success"}
 
+app :: Application
 app = serve api server
+
+runServer :: Int -> IO ()
+runServer port = run port app
