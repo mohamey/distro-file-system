@@ -58,6 +58,7 @@ instance ToJSON DeleteObject
 -- The API Definition
 type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "remove" :> ReqBody '[JSON] DeleteObject :> Delete '[JSON] ApiResponse
+         :<|> "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
          :<|> "files" :> Raw
 
 api :: Proxy API
@@ -66,6 +67,7 @@ api = Proxy
 server :: Server API
 server = uploadNewFile
     :<|> deleteFile
+    :<|> updateFile
     :<|> serveDirectory "static-files" -- Serve files from the static-files directory for get requests
 
   where
@@ -81,14 +83,26 @@ server = uploadNewFile
     deleteFile :: DeleteObject -> Handler ApiResponse
     deleteFile specifiedFile = liftIO $ do
       putStrLn "Deleting file"
-      let actualPath = "static-files" ++ filePath specifiedFile
+      let actualPath = "static-files" ++ filePath specifiedFile -- Get the full filepath
       putStrLn actualPath
-      doesFileExist actualPath >>=
+      doesFileExist actualPath >>= -- Check if file exists
         (\res -> if res then
-          removeFile actualPath >>
+          removeFile actualPath >> -- Remove the file
             return ApiResponse {result=True, message="File successfully removed"}
          else
           return ApiResponse {result=False, message="File does not exist"})
+
+    updateFile :: FileObject -> Handler ApiResponse
+    updateFile specifiedFile = liftIO $ do
+      putStrLn "Updating File"
+      let actualPath = "static-files" ++ (path specifiedFile)
+      putStrLn $ "Updating " ++ actualPath
+      doesFileExist actualPath >>= -- Check if the file exists
+        (\res -> if res then
+            TLIO.writeFile actualPath (fileContent specifiedFile) >> -- Update the file
+              return ApiResponse {result=True, message="File successfully updated"}
+        else
+            return ApiResponse {result=False, message="File does not exist"})
 
 app :: Application
 app = serve api server
