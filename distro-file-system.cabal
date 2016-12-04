@@ -44,9 +44,9 @@ executable distro-file-system
                      , lucid
                      , mongoDB
                      , mtl
+                     , resourcet
                      , servant
                      , servant-server
-                     , split
                      , string-conversions
                      , time
                      , text

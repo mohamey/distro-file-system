@@ -11,20 +11,22 @@
 module FileServer where
 
 import Control.Monad.IO.Class
+import Control.Monad.Trans.Resource
 import Data.Aeson
 import Data.Bson
-import Data.List
-import Data.List.Split
+import Data.List as DL
+import Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.IO as TLIO
 import qualified Data.ByteString as B
 import Database.MongoDB
+import Database.MongoDB.Query
 import GHC.Generics
 import Network.HTTP.Types.Status
 import Network.Wai.Handler.Warp
 import Network.Wai
 import Prelude ()
-import Prelude.Compat 
+import Prelude.Compat as PC
 import Servant
 import System.Directory
 
@@ -34,6 +36,7 @@ data FileObject = FileObject {
   path :: String,
   fileContent :: TL.Text
 } deriving Generic
+
 
 instance FromJSON FileObject
 instance ToJSON FileObject
@@ -46,6 +49,18 @@ data ApiResponse = ApiResponse {
 
 instance FromJSON ApiResponse
 instance ToJSON ApiResponse
+
+-- Object that's stored in the database
+data FileIndex = FileIndex {
+  fileName :: T.Text,
+  fileLocation :: T.Text
+} deriving Generic
+
+fileIndexToDoc :: FileIndex -> Document
+fileIndexToDoc (FileIndex {fileName=fn, fileLocation=fl}) = ["name" =: fn, "path" =: fl]
+
+insertFile :: Document -> Action IO ()
+insertFile newFile = insert_ "files" newFile
 
 -- Handle deleting files from the fileserver
 data DeleteObject = DeleteObject {
@@ -74,10 +89,15 @@ server = uploadNewFile
     -- Upload a new file to the server
     uploadNewFile :: FileObject -> Handler ApiResponse
     uploadNewFile newFile = liftIO $ do
-      let dirParts = splitOn "/" (path newFile)
-      let directory = "static-files" ++ (intercalate "/" (init dirParts)) -- Get the directory for the new file
+      let dirParts = TL.splitOn "/" $ TL.pack (path newFile)
+      let dirTail = TL.unpack (TL.intercalate "/" (DL.init dirParts)) -- Get the directory for the new file
+      let file = DL.last dirParts
+      let directory = "static-files" ++ dirTail
       createDirectoryIfMissing True directory -- Creates parent directories too
       TLIO.writeFile ("static-files" ++ path newFile) (fileContent newFile)
+      -- Write new file to the database
+      let fileDoc = FileIndex {fileName=(TL.toStrict file), fileLocation=(T.pack dirTail)}
+      withMongoDbConnection (insertFile $ fileIndexToDoc fileDoc)
       return ApiResponse {result=True, message="Success"}
 
     deleteFile :: DeleteObject -> Handler ApiResponse
@@ -109,3 +129,14 @@ app = serve api server
 
 runServer :: Int -> IO ()
 runServer port = run port app
+
+-- MongoDB Stuffs
+withMongoDbConnection :: Action IO a -> IO a
+withMongoDbConnection act = do
+  let ip = "127.0.0.1"
+  let database = "FILEDB"
+  pipe <- connect (host ip)
+  ret <- runResourceT $ liftIO $ access pipe master (T.pack database) act
+  close pipe
+  return ret
+
