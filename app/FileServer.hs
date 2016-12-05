@@ -102,13 +102,19 @@ server = uploadNewFile
 
     deleteFile :: DeleteObject -> Handler ApiResponse
     deleteFile specifiedFile = liftIO $ do
-      putStrLn "Deleting file"
+      -- Get the file name, specified path, and actual path
+      let dirParts = TL.splitOn "/" $ TL.pack (filePath specifiedFile)
+      let specFileName = DL.last dirParts
+      let dir = TL.intercalate "/" (DL.init dirParts)
       let actualPath = "static-files" ++ filePath specifiedFile -- Get the full filepath
-      putStrLn actualPath
+      -- Create fileobject for mongodb
+      let fi = FileIndex {fileName=(TL.toStrict specFileName), fileLocation=(TL.toStrict dir)}
+      let mongoDoc = fileIndexToDoc fi
       doesFileExist actualPath >>= -- Check if file exists
         (\res -> if res then
           removeFile actualPath >> -- Remove the file
-            return ApiResponse {result=True, message="File successfully removed"}
+            withMongoDbConnection (deleteOne $ select mongoDoc "files") >>
+              return ApiResponse {result=True, message="File successfully removed"}
          else
           return ApiResponse {result=False, message="File does not exist"})
 
