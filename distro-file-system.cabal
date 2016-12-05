@@ -41,13 +41,16 @@ executable distro-file-system
                      , ghc-prim
                      , http-media
                      , http-types
+                     , http-client
                      , lucid
                      , mongoDB
                      , mtl
                      , resourcet
                      , servant
                      , servant-server
+                     , servant-client
                      , string-conversions
+                     , optparse-applicative
                      , time
                      , text
                      , wai

@@ -9,20 +9,15 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module FileServer where
+import Lib
 
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
-import Data.Aeson
-import Data.Bson
 import Data.List as DL
 import Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.IO as TLIO
-import qualified Data.ByteString as B
 import Database.MongoDB
-import Database.MongoDB.Query
-import GHC.Generics
-import Network.HTTP.Types.Status
 import Network.Wai.Handler.Warp
 import Network.Wai
 import Prelude ()
@@ -30,45 +25,6 @@ import Prelude.Compat as PC
 import Servant
 import System.Directory
 
--- A representation of files on the server
--- This will be stored in the mongodb database
-data FileObject = FileObject {
-  path :: String,
-  fileContent :: TL.Text
-} deriving Generic
-
-
-instance FromJSON FileObject
-instance ToJSON FileObject
-
--- This will be returned on a post request
-data ApiResponse = ApiResponse {
-  result :: Bool,
-  message :: String
-} deriving Generic
-
-instance FromJSON ApiResponse
-instance ToJSON ApiResponse
-
--- Object that's stored in the database
-data FileIndex = FileIndex {
-  fileName :: T.Text,
-  fileLocation :: T.Text
-} deriving Generic
-
-fileIndexToDoc :: FileIndex -> Document
-fileIndexToDoc (FileIndex {fileName=fn, fileLocation=fl}) = ["name" =: fn, "path" =: fl]
-
-insertFile :: Document -> Action IO ()
-insertFile newFile = insert_ "files" newFile
-
--- Handle deleting files from the fileserver
-data DeleteObject = DeleteObject {
-  filePath :: String
-} deriving Generic
-
-instance FromJSON DeleteObject
-instance ToJSON DeleteObject
 
 -- The API Definition
 type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
@@ -103,9 +59,7 @@ server = uploadNewFile
               TLIO.writeFile ("static-files" ++ path newFile) (fileContent newFile) >>
                 -- Write new file to the database
                 withMongoDbConnection (insertFile $ fileIndexToDoc fileDoc) >>
-                  return ApiResponse {result=True, message="Success"}
-            
-            )
+                  return ApiResponse {result=True, message="Success"})
 
     deleteFile :: DeleteObject -> Handler ApiResponse
     deleteFile specifiedFile = liftIO $ do
