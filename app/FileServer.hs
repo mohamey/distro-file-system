@@ -93,12 +93,19 @@ server = uploadNewFile
       let dirTail = TL.unpack (TL.intercalate "/" (DL.init dirParts)) -- Get the directory for the new file
       let file = DL.last dirParts
       let directory = "static-files" ++ dirTail
-      createDirectoryIfMissing True directory -- Creates parent directories too
-      TLIO.writeFile ("static-files" ++ path newFile) (fileContent newFile)
-      -- Write new file to the database
+      let actualPath = "static-files" ++ (path newFile)
       let fileDoc = FileIndex {fileName=(TL.toStrict file), fileLocation=(T.pack dirTail)}
-      withMongoDbConnection (insertFile $ fileIndexToDoc fileDoc)
-      return ApiResponse {result=True, message="Success"}
+      doesFileExist actualPath >>=
+        (\res -> if res then
+            return ApiResponse {result=False, message="File already exists"}
+          else
+            createDirectoryIfMissing True directory >> -- Creates parent directories too
+              TLIO.writeFile ("static-files" ++ path newFile) (fileContent newFile) >>
+                -- Write new file to the database
+                withMongoDbConnection (insertFile $ fileIndexToDoc fileDoc) >>
+                  return ApiResponse {result=True, message="Success"}
+            
+            )
 
     deleteFile :: DeleteObject -> Handler ApiResponse
     deleteFile specifiedFile = liftIO $ do
