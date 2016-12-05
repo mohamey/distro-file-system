@@ -18,7 +18,11 @@ library
   exposed-modules:     Lib
   build-depends:       base >= 4.7 && < 5
                      , aeson
+                     , base-compat
+                     , bson
+                     , mongoDB
                      , servant-server
+                     , text
                      , wai
                      , warp
   default-language:    Haskell2010

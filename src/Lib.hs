@@ -52,9 +52,9 @@ insertFile :: Document -> Action IO ()
 insertFile newFile = insert_ "files" newFile
 
 -- Handle deleting files from the fileserver
-data DeleteObject = DeleteObject {
+data ObjIdentifier = ObjIdentifier {
   filePath :: String
 } deriving Generic
 
-instance FromJSON DeleteObject
-instance ToJSON DeleteObject
+instance FromJSON ObjIdentifier
+instance ToJSON ObjIdentifier

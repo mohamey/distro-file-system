@@ -28,9 +28,9 @@ import System.Directory
 
 -- The API Definition
 type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
-         :<|> "remove" :> ReqBody '[JSON] DeleteObject :> Delete '[JSON] ApiResponse
+         :<|> "remove" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
-         :<|> "files" :> Raw
+         :<|> "files" :> Capture "path" String :> Get '[JSON] FileObject
 
 api :: Proxy API
 api = Proxy
@@ -39,7 +39,7 @@ server :: Server API
 server = uploadNewFile
     :<|> deleteFile
     :<|> updateFile
-    :<|> serveDirectory "static-files" -- Serve files from the static-files directory for get requests
+    :<|> getFile
 
   where
     -- Upload a new file to the server
@@ -61,7 +61,7 @@ server = uploadNewFile
                 withMongoDbConnection (insertFile $ fileIndexToDoc fileDoc) >>
                   return ApiResponse {result=True, message="Success"})
 
-    deleteFile :: DeleteObject -> Handler ApiResponse
+    deleteFile :: ObjIdentifier -> Handler ApiResponse
     deleteFile specifiedFile = liftIO $ do
       -- Get the file name, specified path, and actual path
       let dirParts = TL.splitOn "/" $ TL.pack (filePath specifiedFile)
@@ -90,6 +90,17 @@ server = uploadNewFile
               return ApiResponse {result=True, message="File successfully updated"}
         else
             return ApiResponse {result=False, message="File does not exist"})
+
+    getFile :: String -> Handler FileObject
+    getFile p = liftIO $ do
+      putStrLn "Getting file: "
+      let actualPath = "static-files" ++ p
+      doesFileExist actualPath >>=
+        (\res -> if res then
+            TLIO.readFile actualPath >>=
+              (\txt -> return FileObject{path=p, fileContent=txt})
+        else
+            return FileObject{path="", fileContent="File Not Found"})
 
 app :: Application
 app = serve api server
