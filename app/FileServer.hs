@@ -30,7 +30,7 @@ import System.Directory
 type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "remove" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
-         :<|> "files" :> Capture "path" String :> Get '[JSON] FileObject
+         :<|> "files" :> QueryParam "path" String :> Get '[JSON] FileObject
 
 api :: Proxy API
 api = Proxy
@@ -91,16 +91,19 @@ server = uploadNewFile
         else
             return ApiResponse {result=False, message="File does not exist"})
 
-    getFile :: String -> Handler FileObject
-    getFile p = liftIO $ do
-      putStrLn "Getting file: "
-      let actualPath = "static-files" ++ p
-      doesFileExist actualPath >>=
-        (\res -> if res then
-            TLIO.readFile actualPath >>=
-              (\txt -> return FileObject{path=p, fileContent=txt})
-        else
-            return FileObject{path="", fileContent="File Not Found"})
+    getFile :: Maybe String -> Handler FileObject
+    getFile mp = case mp of
+      Nothing -> liftIO $ do
+        return FileObject {path="", fileContent="Path not specified"}
+      Just p -> liftIO $ do
+        putStrLn "Getting file: "
+        let actualPath = "static-files" ++ p
+        doesFileExist actualPath >>=
+          (\res -> if res then
+              TLIO.readFile actualPath >>=
+                (\txt -> return FileObject{path=p, fileContent=txt})
+          else
+              return FileObject{path="", fileContent="File Not Found"})
 
 app :: Application
 app = serve api server
