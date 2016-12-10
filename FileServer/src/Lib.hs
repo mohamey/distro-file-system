@@ -18,6 +18,7 @@ import Database.MongoDB
 import GHC.Generics
 import Prelude ()
 import Prelude.Compat as PC
+import Servant
 
 -- A representation of files on the server
 -- This will be stored in the mongodb database
@@ -58,3 +59,9 @@ data ObjIdentifier = ObjIdentifier {
 
 instance FromJSON ObjIdentifier
 instance ToJSON ObjIdentifier
+
+-- The API Definition
+type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
+         :<|> "remove" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
+         :<|> "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
+         :<|> "files" :> QueryParam "path" String :> Get '[JSON] FileObject

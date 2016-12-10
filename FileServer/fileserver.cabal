@@ -1,4 +1,4 @@
-name:                distro-file-system
+name:                fileserver
 version:             0.1.0.0
 synopsis:            Initial project template from stack
 description:         Please see README.md
@@ -27,7 +27,7 @@ library
                      , warp >= 3.2
   default-language:    Haskell2010
 
-executable distro-file-system
+executable fileserver
   hs-source-dirs:      app
   main-is:             Main.hs
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
@@ -41,7 +41,7 @@ executable distro-file-system
                      , bson >= 0.3
                      , bytestring >= 0.10
                      , directory >= 1.2
-                     , distro-file-system
+                     , fileserver
                      , ghc-prim >= 0.5
                      , http-media >= 0.6
                      , http-types >= 0.9
@@ -66,7 +66,7 @@ test-suite distro-file-system-test
   hs-source-dirs:      test
   main-is:             Spec.hs
   build-depends:       base
-                     , distro-file-system
+                     , fileserver
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-language:    Haskell2010
 

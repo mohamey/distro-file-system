@@ -26,11 +26,6 @@ import Servant
 import System.Directory
 
 
--- The API Definition
-type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
-         :<|> "remove" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
-         :<|> "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
-         :<|> "files" :> QueryParam "path" String :> Get '[JSON] FileObject
 
 api :: Proxy API
 api = Proxy
