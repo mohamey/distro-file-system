@@ -13,8 +13,8 @@ module Lib where
 import Data.Aeson
 import Data.Bson
 import Data.Text as T
-import qualified Data.Text.Lazy as TL
 import Database.MongoDB
+import qualified Data.Text.Lazy as TL
 import GHC.Generics
 import Prelude ()
 import Prelude.Compat as PC

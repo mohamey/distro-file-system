@@ -1,6 +1,7 @@
 module Main where
 
 import Lib
+import Client
 
 main :: IO ()
-main = startApp
+main = run

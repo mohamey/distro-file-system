@@ -5,11 +5,8 @@
 module Client where
 
 import Lib
-import FileServer as FS
 
-import Data.Aeson
 import Data.Proxy
-import GHC.Generics
 import Network.HTTP.Client (newManager, defaultManagerSettings)
 import Servant.API
 import Servant.Client
@@ -27,13 +24,15 @@ upload :<|> remove :<|> update :<|> get = client papi
 -- Write queries to be performed
 queries :: ClientM (FileObject)
 queries = do
-  fi <- get (Just "temp/test.txt")
+  fi <- get (Just "/temp/test.txt")
   return (fi)
 
 run :: IO ()
 run = do
   manager <- newManager defaultManagerSettings
-  res <- runClientM queries (ClientEnv manager (BaseUrl Http "localhost" 8080 "/files"))
+  let url = BaseUrl Http "localhost" 8080 ""
+  putStrLn $ showBaseUrl url
+  res <- runClientM queries (ClientEnv manager url)
   case res of
     Left err -> putStrLn $ "Error: " ++ show err
     Right (fi) -> do
