@@ -89,6 +89,7 @@ server = uploadNewFile
     getFile :: Maybe String -> Handler FileObject
     getFile mp = case mp of
       Nothing -> liftIO $ do
+        putStrLn "Path not specified"
         return FileObject {path="", fileContent="Path not specified"}
       Just p -> liftIO $ do
         putStrLn "Getting file: "
