@@ -1,5 +1,6 @@
 .stack-work/
 *.DS_Store
 FileServer/.DS_Store
+Client/.DS_Store
 static-files/.DS_Store
 static-files/temp/.DS_Store

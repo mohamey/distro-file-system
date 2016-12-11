@@ -44,15 +44,16 @@ server = uploadNewFile
       let dirParts = TL.splitOn "/" $ TL.pack (path newFile)
       let dirTail = TL.unpack (TL.intercalate "/" (DL.init dirParts)) -- Get the directory for the new file
       let file = DL.last dirParts
-      let directory = if '/' == (PC.head dirTail) then "static-files" ++ dirTail else "static-files/" ++ dirTail
-      let actualPath = directory ++ "/" ++ (TL.unpack file)
+      let directory = if '/' == (PC.head dirTail) then dirTail else "/" ++ dirTail
+      let actualDirectory = "static-files" ++ directory
+      let actualPath = actualDirectory ++ "/" ++ (TL.unpack file)
       putStrLn actualPath
-      let fileDoc = FileIndex {fileName=(TL.unpack file), fileLocation=dirTail}
+      let fileDoc = FileIndex {fileName=(TL.unpack file), fileLocation=directory}
       doesFileExist actualPath >>=
         (\res -> if res then
             return ApiResponse {result=False, message="File already exists"}
           else
-            createDirectoryIfMissing True directory >> -- Creates parent directories too
+            createDirectoryIfMissing True actualDirectory >> -- Creates parent directories too
               TLIO.writeFile actualPath (fileContent newFile) >>
                 -- Write new file to the database
                 withMongoDbConnection (insertFile $ fileIndexToDoc fileDoc) >>
@@ -64,9 +65,10 @@ server = uploadNewFile
       let dirParts = TL.splitOn "/" $ TL.pack (filePath specifiedFile)
       let specFileName = DL.last dirParts
       let dir = TL.intercalate "/" (DL.init dirParts)
-      let actualPath = if (PC.head (filePath specifiedFile)) == '/' then "static-files" ++ filePath specifiedFile else "static-files/" ++ filePath specifiedFile
+      let directory = if (TL.head dir) == '/' then "static-files" ++ (TL.unpack dir) else "static-files/" ++ (TL.unpack dir)
+      let actualPath = directory ++ "/" ++ TL.unpack specFileName
       -- Create fileobject for mongodb
-      let fi = FileIndex {fileName=(TL.unpack specFileName), fileLocation=(TL.unpack dir)}
+      let fi = FileIndex {fileName=(TL.unpack specFileName), fileLocation=directory}
       let mongoDoc = fileIndexToDoc fi
       doesFileExist actualPath >>= -- Check if file exists
         (\res -> if res then
