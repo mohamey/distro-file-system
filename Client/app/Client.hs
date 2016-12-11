@@ -35,6 +35,11 @@ postRequest postFile = do
   res <- upload postFile
   return res
 
+putRequest :: FileObject -> ClientM ApiResponse
+putRequest putFile = do
+  res <- update putFile
+  return res
+
 -- Args list should just have one index, the requested path
 parseCommand :: String -> [String] -> IO ()
 parseCommand _ [] = putStrLn "No Arguments provided"
@@ -59,6 +64,22 @@ parseCommand "post" (f:_) = liftIO $ do
                       putStrLn $ "Post failed: " ++ (message apiRes)
                     True -> do
                       putStrLn $ "Post Successful: " ++ message(apiRes)))
+   else do
+        putStrLn "File not found")
+parseCommand "put" (f:_) = liftIO $ do
+  manager <- newManager defaultManagerSettings
+  doesFileExist f >>=
+    (\res -> if res then
+        TLIO.readFile f >>=
+          (\fileText -> runClientM (putRequest (FileObject f fileText)) (ClientEnv manager url) >>=
+            (\response -> case response of
+                Left err -> putStrLn $ "Error: " ++ show err
+                Right apiRes -> do
+                  case (result apiRes) of
+                    False -> do
+                      putStrLn $ "Put failed: " ++ (message apiRes)
+                    True -> do
+                      putStrLn $ "Put Successful: " ++ message(apiRes)))
    else do
         putStrLn "File not found")
 
