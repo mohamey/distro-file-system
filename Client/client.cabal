@@ -36,10 +36,12 @@ executable client
                      , base-compat
                      , bson
                      , client
+                     , directory
                      , http-client
                      , servant
                      , servant-client
                      , text
+                     , transformers
   default-language:    Haskell2010
 
 test-suite client-test
