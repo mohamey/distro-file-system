@@ -63,7 +63,7 @@ server = uploadNewFile
       let dirParts = TL.splitOn "/" $ TL.pack (filePath specifiedFile)
       let specFileName = DL.last dirParts
       let dir = TL.intercalate "/" (DL.init dirParts)
-      let actualPath = "static-files" ++ filePath specifiedFile -- Get the full filepath
+      let actualPath = if (PC.head (filePath specifiedFile)) == '/' then "static-files" ++ filePath specifiedFile else "static-files/" ++ filePath specifiedFile
       -- Create fileobject for mongodb
       let fi = FileIndex {fileName=(TL.toStrict specFileName), fileLocation=(TL.toStrict dir)}
       let mongoDoc = fileIndexToDoc fi
@@ -78,7 +78,7 @@ server = uploadNewFile
     updateFile :: FileObject -> Handler ApiResponse
     updateFile specifiedFile = liftIO $ do
       putStrLn "Updating File"
-      let actualPath = "static-files" ++ (path specifiedFile)
+      let actualPath = if (PC.head (path specifiedFile)) == '/' then "static-files" ++ (path specifiedFile) else "static-files/" ++ (path specifiedFile)
       putStrLn $ "Updating " ++ actualPath
       doesFileExist actualPath >>= -- Check if the file exists
         (\res -> if res then
