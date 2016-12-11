@@ -64,7 +64,9 @@ docToFileIndex :: Document -> FileIndex
 docToFileIndex doc = FileIndex (T.pack (show (valueAt "name" doc))) (T.pack (show (valueAt "path" doc)))
 
 resolveFileIndex :: FileIndex -> T.Text
-resolveFileIndex fi = T.append (fileLocation fi) (fileName fi) 
+resolveFileIndex fi = T.replace "\\\"" "\"" $ T.replace "\\\\\\\"" "" fullPath
+  where
+    fullPath = T.append (fileLocation fi) (fileName fi) 
 
 fileIndexToObjId :: FileIndex -> ObjIdentifier
 fileIndexToObjId fi = ObjIdentifier (show (resolveFileIndex fi))
