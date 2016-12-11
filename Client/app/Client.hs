@@ -40,6 +40,11 @@ putRequest putFile = do
   res <- update putFile
   return res
 
+deleteRequest :: ObjIdentifier -> ClientM ApiResponse
+deleteRequest fpath = do
+  res <- remove fpath
+  return res
+
 -- Args list should just have one index, the requested path
 parseCommand :: String -> [String] -> IO ()
 parseCommand _ [] = putStrLn "No Arguments provided"
@@ -82,12 +87,23 @@ parseCommand "put" (f:_) = liftIO $ do
                       putStrLn $ "Put Successful: " ++ message(apiRes)))
    else do
         putStrLn "File not found")
+parseCommand "delete" (fp:_) = liftIO $ do
+  manager <- newManager defaultManagerSettings
+  res <- runClientM (deleteRequest (ObjIdentifier fp)) (ClientEnv manager url)
+  case res of
+    Left err -> putStrLn $ "Error: " ++ show err
+    Right apiRes -> do
+      case (result apiRes) of
+        False -> do
+          putStrLn $ "Delete failed: " ++ (message apiRes)
+        True -> do
+          putStrLn $ "Delete Successful: " ++ message(apiRes)
 
 parseCommand _ _ = putStrLn "Command unrecognized"
 
 run :: IO ()
 run = do
-  putStrLn "Please enter a command:\n"
+  putStrLn "Please enter a command:"
   command <- getLine
   let commandParts = words command
   parseCommand (head commandParts) (tail commandParts)
