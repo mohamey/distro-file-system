@@ -13,8 +13,8 @@ import Lib
 
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
-import Data.List as DL
-import Data.Text as T
+import qualified Data.List as DL
+import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.IO as TLIO
 import Database.MongoDB
@@ -35,6 +35,7 @@ server = uploadNewFile
     :<|> deleteFile
     :<|> updateFile
     :<|> getFile
+    :<|> listFiles
 
   where
     -- Upload a new file to the server
@@ -101,6 +102,12 @@ server = uploadNewFile
                 (\txt -> return FileObject{path=p, fileContent=txt})
           else
               return FileObject{path="", fileContent="File Not Found"})
+
+    listFiles :: Handler [ObjIdentifier]
+    listFiles = liftIO $ do
+      withMongoDbConnection $ do
+        docs <- find (select [] "files") >>= drainCursor
+        return (docToObjs docs)
 
 app :: Application
 app = serve api server
