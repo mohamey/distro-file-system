@@ -43,15 +43,16 @@ server = uploadNewFile
       let dirParts = TL.splitOn "/" $ TL.pack (path newFile)
       let dirTail = TL.unpack (TL.intercalate "/" (DL.init dirParts)) -- Get the directory for the new file
       let file = DL.last dirParts
-      let directory = "static-files" ++ dirTail
-      let actualPath = "static-files" ++ (path newFile)
+      let directory = if '/' == (PC.head dirTail) then "static-files" ++ dirTail else "static-files/" ++ dirTail
+      let actualPath = directory ++ "/" ++ (TL.unpack file)
+      putStrLn actualPath
       let fileDoc = FileIndex {fileName=(TL.toStrict file), fileLocation=(T.pack dirTail)}
       doesFileExist actualPath >>=
         (\res -> if res then
             return ApiResponse {result=False, message="File already exists"}
           else
             createDirectoryIfMissing True directory >> -- Creates parent directories too
-              TLIO.writeFile ("static-files" ++ path newFile) (fileContent newFile) >>
+              TLIO.writeFile actualPath (fileContent newFile) >>
                 -- Write new file to the database
                 withMongoDbConnection (insertFile $ fileIndexToDoc fileDoc) >>
                   return ApiResponse {result=True, message="Success"})
