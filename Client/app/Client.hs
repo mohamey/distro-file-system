@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Client where
 
@@ -8,6 +9,7 @@ import Lib
 
 import Control.Monad.IO.Class
 import Data.Proxy as DP
+import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.IO as TLIO
 import Network.HTTP.Client
 import Servant.API
@@ -18,11 +20,12 @@ upload :: FileObject -> ClientM ApiResponse
 remove :: ObjIdentifier -> ClientM ApiResponse
 update :: FileObject -> ClientM ApiResponse
 get :: Maybe String -> ClientM FileObject
+list :: ClientM [ObjIdentifier]
 
 papi :: DP.Proxy API
 papi = DP.Proxy
 
-upload :<|> remove :<|> update :<|> get = client papi
+upload :<|> remove :<|> update :<|> get :<|> list = client papi
 
 -- Write queries to be performed
 getRequest :: String -> ClientM FileObject
@@ -45,9 +48,14 @@ deleteRequest fpath = do
   res <- remove fpath
   return res
 
+listRequest :: ClientM [ObjIdentifier]
+listRequest = do
+  res <- list
+  return res
+
 -- Args list should just have one index, the requested path
 parseCommand :: String -> [String] -> IO ()
-parseCommand _ [] = putStrLn "No Arguments provided"
+parseCommand "get" [] = putStrLn "No Arguments provided"
 parseCommand "get" (p:_) = do
   manager <- newManager defaultManagerSettings
   res <- runClientM (getRequest p) (ClientEnv manager url)
@@ -55,6 +63,8 @@ parseCommand "get" (p:_) = do
     Left err -> putStrLn $ "Error: " ++ show err
     Right fi -> do
       putStrLn $ show (fileContent fi)
+
+parseCommand "post" [] = putStrLn "No Arguments provided"
 parseCommand "post" (f:_) = liftIO $ do
   manager <- newManager defaultManagerSettings
   doesFileExist f >>=
@@ -71,6 +81,7 @@ parseCommand "post" (f:_) = liftIO $ do
                       putStrLn $ "Post Successful: " ++ message(apiRes)))
    else do
         putStrLn "File not found")
+parseCommand "put" [] = putStrLn "No Arguments provided"
 parseCommand "put" (f:_) = liftIO $ do
   manager <- newManager defaultManagerSettings
   doesFileExist f >>=
@@ -87,6 +98,8 @@ parseCommand "put" (f:_) = liftIO $ do
                       putStrLn $ "Put Successful: " ++ message(apiRes)))
    else do
         putStrLn "File not found")
+
+parseCommand "delete" [] = putStrLn "No Arguments provided"
 parseCommand "delete" (fp:_) = liftIO $ do
   manager <- newManager defaultManagerSettings
   res <- runClientM (deleteRequest (ObjIdentifier fp)) (ClientEnv manager url)
@@ -98,6 +111,15 @@ parseCommand "delete" (fp:_) = liftIO $ do
           putStrLn $ "Delete failed: " ++ (message apiRes)
         True -> do
           putStrLn $ "Delete Successful: " ++ message(apiRes)
+
+parseCommand "list" _ = liftIO $ do
+  manager <- newManager defaultManagerSettings
+  res <- runClientM listRequest (ClientEnv manager url)
+  case res of
+    Left err -> putStrLn $ "Error: " ++ show err
+    Right objIds -> do
+      let paths = map filePath objIds
+      mapM_ print paths
 
 parseCommand _ _ = putStrLn "Command unrecognized"
 

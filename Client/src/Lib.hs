@@ -65,3 +65,4 @@ type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "remove" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
          :<|> "files" :> QueryParam "path" String :> Get '[JSON] FileObject
+         :<|> "list" :> Get '[JSON] [ObjIdentifier]
