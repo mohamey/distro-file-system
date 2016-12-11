@@ -13,10 +13,10 @@ module Lib where
 
 import Data.Aeson
 import Data.Bson
+import Data.List.Utils as DLU
 import Data.Text as T
 import qualified Data.Text.Lazy as TL
-import Database.MongoDB
-import Database.MongoDB.Query
+import Database.MongoDB as DDB
 import GHC.Generics
 import Prelude ()
 import Prelude.Compat as PC
@@ -44,8 +44,8 @@ instance ToJSON ApiResponse
 
 -- Object that's stored in the database
 data FileIndex = FileIndex {
-  fileName :: T.Text,
-  fileLocation :: T.Text
+  fileName :: String,
+  fileLocation :: String
 } deriving Generic
 
 -- Handle deleting files from the fileserver
@@ -60,16 +60,20 @@ instance ToJSON ObjIdentifier
 fileIndexToDoc :: FileIndex -> Document
 fileIndexToDoc (FileIndex {fileName=fn, fileLocation=fl}) = ["name" =: fn, "path" =: fl]
 
+unescape :: String -> String
+unescape s = DLU.replace "\\" "" $ DLU.replace "\"" "" $ DLU.replace "\\\\" "" s
+
 docToFileIndex :: Document -> FileIndex
-docToFileIndex doc = FileIndex (T.pack (show (valueAt "name" doc))) (T.pack (show (valueAt "path" doc)))
+docToFileIndex doc = FileIndex (unescape fname) (unescape fpath)
+  where
+    fname = show $ DDB.valueAt "name" doc 
+    fpath = (show $ DDB.valueAt "path" doc) ++ "/"
 
 resolveFileIndex :: FileIndex -> T.Text
-resolveFileIndex fi = T.replace "\\\"" "\"" $ T.replace "\\\\\\\"" "" fullPath
-  where
-    fullPath = T.append (fileLocation fi) (fileName fi) 
+resolveFileIndex fi = T.pack $ unescape (fileLocation fi ++ fileName fi)
 
 fileIndexToObjId :: FileIndex -> ObjIdentifier
-fileIndexToObjId fi = ObjIdentifier (show (resolveFileIndex fi))
+fileIndexToObjId fi = ObjIdentifier $ unescape (show (resolveFileIndex fi))
 
 insertFile :: Document -> Action IO ()
 insertFile newFile = insert_ "files" newFile

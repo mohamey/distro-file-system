@@ -47,7 +47,7 @@ server = uploadNewFile
       let directory = if '/' == (PC.head dirTail) then "static-files" ++ dirTail else "static-files/" ++ dirTail
       let actualPath = directory ++ "/" ++ (TL.unpack file)
       putStrLn actualPath
-      let fileDoc = FileIndex {fileName=(TL.toStrict file), fileLocation=(T.pack dirTail)}
+      let fileDoc = FileIndex {fileName=(TL.unpack file), fileLocation=dirTail}
       doesFileExist actualPath >>=
         (\res -> if res then
             return ApiResponse {result=False, message="File already exists"}
@@ -66,7 +66,7 @@ server = uploadNewFile
       let dir = TL.intercalate "/" (DL.init dirParts)
       let actualPath = if (PC.head (filePath specifiedFile)) == '/' then "static-files" ++ filePath specifiedFile else "static-files/" ++ filePath specifiedFile
       -- Create fileobject for mongodb
-      let fi = FileIndex {fileName=(TL.toStrict specFileName), fileLocation=(TL.toStrict dir)}
+      let fi = FileIndex {fileName=(TL.unpack specFileName), fileLocation=(TL.unpack dir)}
       let mongoDoc = fileIndexToDoc fi
       doesFileExist actualPath >>= -- Check if file exists
         (\res -> if res then

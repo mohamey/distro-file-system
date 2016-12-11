@@ -21,6 +21,7 @@ library
                      , base-compat >= 0.9
                      , bson >= 0.3
                      , mongoDB >= 2.1
+                     , MissingH
                      , servant-server >= 0.9.1.1
                      , text >= 1.2
                      , wai >= 3.2
@@ -48,6 +49,7 @@ executable fileserver
                      , http-client >= 0.4
                      , lucid >= 2.9
                      , mongoDB >= 2.1
+                     , MissingH
                      , mtl >= 2.2
                      , resourcet >= 1.1
                      , servant >= 0.9.1.1
