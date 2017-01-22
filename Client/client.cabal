@@ -36,6 +36,7 @@ executable client
                      , base-compat
                      , bson
                      , client
+                     , containers >= 0.5
                      , directory
                      , http-client
                      , servant

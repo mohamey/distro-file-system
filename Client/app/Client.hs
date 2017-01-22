@@ -8,10 +8,10 @@ module Client where
 import Lib
 
 import Control.Monad.IO.Class
+import qualified Data.Map.Strict as Map
 import Data.Proxy as DP
-import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.IO as TLIO
-import Network.HTTP.Client
+import qualified Network.HTTP.Client as HPC
 import Servant.API
 import Servant.Client
 import System.Directory
@@ -62,88 +62,134 @@ dsapi = DP.Proxy
 
 dupload :<|> dupdate :<|> dresolve :<|> dlist = client dsapi
 
+dResolveRequest :: String -> ClientM (Either ApiResponse DirectoryDesc)
+dResolveRequest idString = do
+  res <- dresolve idString
+  return res
+
 listRequest :: ClientM [FileSummary]
 listRequest = do
   res <- dlist
   return res
 
 -- Args list should just have one index, the requested path
-parseCommand :: String -> [String] -> BaseUrl -> IO ()
-parseCommand "get" [] _ = putStrLn "No Arguments provided"
-parseCommand "get" (p:_) adr = do
-  manager <- newManager defaultManagerSettings
-  res <- runClientM (getRequest p) (ClientEnv manager adr)
-  case res of
-    Left err -> putStrLn $ "Error: " ++ show err
-    Right fi -> do
-      putStrLn $ show (fileContent fi)
+parseCommand :: String -> [String] -> BaseUrl -> Env -> IO ()
+parseCommand "get" (p:_) adr env = do
+  manager <- HPC.newManager HPC.defaultManagerSettings
+  case Map.lookup p env of
+    Just fileIdString -> do
+      res <- runClientM (dResolveRequest fileIdString) (ClientEnv manager adr)
+      case res of
+        Left err -> do
+          putStrLn $ "Error: " ++ show err
+          prompt env adr
+        Right dsResponse -> do
+          case dsResponse of
+            Left x -> do
+              putStrLn (message x)
+              prompt env adr
+            Right dd -> do
+              rres <- runClientM (getRequest (fLocation dd ++ "/" ++ fName dd)) (ClientEnv manager (url (fileServer dd) (port dd)))
+              case rres of
+                Left err -> do
+                  putStrLn $ "Error retrieving file from file server:\n" ++ show err
+                  prompt env adr
+                Right x -> do
+                  putStrLn (show $ fileContent x)
+                  prompt env adr
+    Nothing -> do
+      putStrLn "Could not resolve file path locally"
+      prompt env adr
 
-parseCommand "post" [] _ = putStrLn "No Arguments provided"
-parseCommand "post" (f:_) adr = liftIO $ do
-  manager <- newManager defaultManagerSettings
+parseCommand "post" (f:_) adr env = liftIO $ do
+  manager <- HPC.newManager HPC.defaultManagerSettings
   doesFileExist f >>=
     (\res -> if res then
         TLIO.readFile f >>=
           (\fileText -> runClientM (postRequest (FileObject f fileText)) (ClientEnv manager adr) >>=
             (\response -> case response of
-                Left err -> putStrLn $ "Error: " ++ show err
+                Left err -> do
+                  putStrLn $ "Error: " ++ show err
+                  prompt env adr
                 Right apiRes -> do
                   case (result apiRes) of
                     False -> do
                       putStrLn $ "Post failed: " ++ (message apiRes)
+                      prompt env adr
                     True -> do
-                      putStrLn $ "Post Successful: " ++ message(apiRes)))
+                      putStrLn $ "Post Successful: " ++ message(apiRes))) >> prompt env adr
    else do
-        putStrLn "File not found")
+        putStrLn "File not found") >> prompt env adr
 
-parseCommand "put" [] _ = putStrLn "No Arguments provided"
-parseCommand "put" (f:_) adr = liftIO $ do
-  manager <- newManager defaultManagerSettings
+parseCommand "put" (f:_) adr env = liftIO $ do
+  manager <- HPC.newManager HPC.defaultManagerSettings
   doesFileExist f >>=
     (\res -> if res then
         TLIO.readFile f >>=
           (\fileText -> runClientM (putRequest (FileObject f fileText)) (ClientEnv manager adr) >>=
             (\response -> case response of
-                Left err -> putStrLn $ "Error: " ++ show err
+                Left err -> do
+                  putStrLn $ "Error: " ++ show err
+                  prompt env adr
                 Right apiRes -> do
                   case (result apiRes) of
                     False -> do
                       putStrLn $ "Put failed: " ++ (message apiRes)
+                      prompt env adr
                     True -> do
-                      putStrLn $ "Put Successful: " ++ message(apiRes)))
+                      putStrLn $ "Put Successful: " ++ message(apiRes)
+                      prompt env adr))
    else do
-        putStrLn "File not found")
+        putStrLn "File not found"
+        prompt env adr)
 
-parseCommand "delete" [] _ = putStrLn "No Arguments provided"
-parseCommand "delete" (fp:_) adr = liftIO $ do
-  manager <- newManager defaultManagerSettings
+parseCommand "delete" (fp:_) adr env = liftIO $ do
+  manager <- HPC.newManager HPC.defaultManagerSettings
   res <- runClientM (deleteRequest (ObjIdentifier fp)) (ClientEnv manager adr)
   case res of
-    Left err -> putStrLn $ "Error: " ++ show err
+    Left err -> do
+      putStrLn $ "Error: " ++ show err
+      prompt env adr
     Right apiRes -> do
       case (result apiRes) of
         False -> do
           putStrLn $ "Delete failed: " ++ (message apiRes)
+          prompt env adr
         True -> do
           putStrLn $ "Delete Successful: " ++ message(apiRes)
+          prompt env adr
 
-parseCommand "list" _  adr = liftIO $ do
-  manager <- newManager defaultManagerSettings
+parseCommand "list" _  adr env = liftIO $ do
+  manager <- HPC.newManager HPC.defaultManagerSettings
   res <- runClientM listRequest (ClientEnv manager adr)
   case res of
-    Left err -> putStrLn $ "Error: " ++ show err
+    Left err -> do
+      putStrLn $ "Error: " ++ show err
+      prompt env adr
     Right summaries -> do
-      let paths = map fullPath summaries
-      mapM_ print paths
+      let values = map fileId summaries
+      let keys = map fullPath summaries
+      let zippedList = zip keys values
+      let newEnv = Map.fromList zippedList
+      mapM_ print keys
+      prompt newEnv adr
 
-parseCommand _ _ _ = putStrLn "Command unrecognized"
+parseCommand _ [] adr e = putStrLn "No Arguments provided" >> prompt e adr
+parseCommand _ _ _ _ = putStrLn "Command unrecognized"
 
 run :: String -> Int -> IO ()
 run dirServerAddress dirServerPort = do
+  prompt Map.empty (url dirServerAddress dirServerPort)
+
+prompt :: Env -> BaseUrl -> IO ()
+prompt env burl = do
   putStrLn "Please enter a command:"
   command <- getLine
   let commandParts = words command
-  parseCommand (head commandParts) (tail commandParts) (url dirServerAddress dirServerPort)
+  parseCommand (head commandParts) (tail commandParts) burl env
 
 url :: String -> Int -> BaseUrl
 url s p = BaseUrl Http s p ""
+
+type Env = Map.Map String String
+
