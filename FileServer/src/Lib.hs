@@ -144,6 +144,7 @@ data FileServer = FileServer {
 } deriving Generic
 
 instance ToJSON FileServer
+instance FromJSON FileServer
 
 -- The API Definition
 type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
@@ -157,3 +158,4 @@ type DSAPI = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiRespons
          :<|> "resolve" :> ReqBody '[JSON] String :> Post '[JSON] (Either ApiResponse DirectoryDesc)
          :<|> "list" :> Get '[JSON] [FileSummary]
          :<|> "add" :> ReqBody '[JSON] FileServer :> Post '[JSON] ApiResponse
+         :<|> "getFs" :> Get '[JSON] FileServer

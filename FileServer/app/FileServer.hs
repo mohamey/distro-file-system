@@ -28,8 +28,6 @@ import Servant
 import Servant.Client
 import System.Directory
 
-
-
 api :: Proxy API
 api = Proxy
 
@@ -165,11 +163,12 @@ update :: UpdateObject -> ClientM ApiResponse
 resolve :: String -> ClientM (Either ApiResponse DirectoryDesc)
 list :: ClientM [FileSummary]
 add :: FileServer -> ClientM ApiResponse
+getFs :: ClientM FileServer
 
 dsapi :: DP.Proxy DSAPI
 dsapi = DP.Proxy
 
-upload :<|> update :<|> resolve :<|> list :<|> add = client dsapi
+upload :<|> update :<|> resolve :<|> list :<|> add :<|> getFs = client dsapi
 
 postRequest :: [DirectoryDesc] -> ClientM ApiResponse
 postRequest postList = do
