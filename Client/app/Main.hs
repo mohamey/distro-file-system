@@ -1,7 +1,12 @@
 module Main where
 
-import Lib
+import Control.Monad.IO.Class
 import Client
+import System.Environment
 
 main :: IO ()
-main = run
+main = do
+  args <- getArgs
+  let address = args !! 0
+  let portNo = args !! 1
+  liftIO $ run address (read portNo)

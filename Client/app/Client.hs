@@ -16,6 +16,8 @@ import Servant.API
 import Servant.Client
 import System.Directory
 
+-------------------------------- File Server API --------------------------------------------
+
 upload :: FileObject -> ClientM ApiResponse
 remove :: ObjIdentifier -> ClientM ApiResponse
 update :: FileObject -> ClientM ApiResponse
@@ -48,29 +50,41 @@ deleteRequest fpath = do
   res <- remove fpath
   return res
 
-listRequest :: ClientM [ObjIdentifier]
+------------------------------- Directory Server API ------------------------------------------
+
+dupload :: [DirectoryDesc] -> ClientM ApiResponse
+dupdate :: UpdateObject -> ClientM ApiResponse
+dresolve :: String -> ClientM (Either ApiResponse DirectoryDesc)
+dlist :: ClientM [FileSummary]
+
+dsapi :: DP.Proxy DSAPI
+dsapi = DP.Proxy
+
+dupload :<|> dupdate :<|> dresolve :<|> dlist = client dsapi
+
+listRequest :: ClientM [FileSummary]
 listRequest = do
-  res <- list
+  res <- dlist
   return res
 
 -- Args list should just have one index, the requested path
-parseCommand :: String -> [String] -> IO ()
-parseCommand "get" [] = putStrLn "No Arguments provided"
-parseCommand "get" (p:_) = do
+parseCommand :: String -> [String] -> BaseUrl -> IO ()
+parseCommand "get" [] _ = putStrLn "No Arguments provided"
+parseCommand "get" (p:_) adr = do
   manager <- newManager defaultManagerSettings
-  res <- runClientM (getRequest p) (ClientEnv manager url)
+  res <- runClientM (getRequest p) (ClientEnv manager adr)
   case res of
     Left err -> putStrLn $ "Error: " ++ show err
     Right fi -> do
       putStrLn $ show (fileContent fi)
 
-parseCommand "post" [] = putStrLn "No Arguments provided"
-parseCommand "post" (f:_) = liftIO $ do
+parseCommand "post" [] _ = putStrLn "No Arguments provided"
+parseCommand "post" (f:_) adr = liftIO $ do
   manager <- newManager defaultManagerSettings
   doesFileExist f >>=
     (\res -> if res then
         TLIO.readFile f >>=
-          (\fileText -> runClientM (postRequest (FileObject f fileText)) (ClientEnv manager url) >>=
+          (\fileText -> runClientM (postRequest (FileObject f fileText)) (ClientEnv manager adr) >>=
             (\response -> case response of
                 Left err -> putStrLn $ "Error: " ++ show err
                 Right apiRes -> do
@@ -81,13 +95,14 @@ parseCommand "post" (f:_) = liftIO $ do
                       putStrLn $ "Post Successful: " ++ message(apiRes)))
    else do
         putStrLn "File not found")
-parseCommand "put" [] = putStrLn "No Arguments provided"
-parseCommand "put" (f:_) = liftIO $ do
+
+parseCommand "put" [] _ = putStrLn "No Arguments provided"
+parseCommand "put" (f:_) adr = liftIO $ do
   manager <- newManager defaultManagerSettings
   doesFileExist f >>=
     (\res -> if res then
         TLIO.readFile f >>=
-          (\fileText -> runClientM (putRequest (FileObject f fileText)) (ClientEnv manager url) >>=
+          (\fileText -> runClientM (putRequest (FileObject f fileText)) (ClientEnv manager adr) >>=
             (\response -> case response of
                 Left err -> putStrLn $ "Error: " ++ show err
                 Right apiRes -> do
@@ -99,10 +114,10 @@ parseCommand "put" (f:_) = liftIO $ do
    else do
         putStrLn "File not found")
 
-parseCommand "delete" [] = putStrLn "No Arguments provided"
-parseCommand "delete" (fp:_) = liftIO $ do
+parseCommand "delete" [] _ = putStrLn "No Arguments provided"
+parseCommand "delete" (fp:_) adr = liftIO $ do
   manager <- newManager defaultManagerSettings
-  res <- runClientM (deleteRequest (ObjIdentifier fp)) (ClientEnv manager url)
+  res <- runClientM (deleteRequest (ObjIdentifier fp)) (ClientEnv manager adr)
   case res of
     Left err -> putStrLn $ "Error: " ++ show err
     Right apiRes -> do
@@ -112,23 +127,23 @@ parseCommand "delete" (fp:_) = liftIO $ do
         True -> do
           putStrLn $ "Delete Successful: " ++ message(apiRes)
 
-parseCommand "list" _ = liftIO $ do
+parseCommand "list" _  adr = liftIO $ do
   manager <- newManager defaultManagerSettings
-  res <- runClientM listRequest (ClientEnv manager url)
+  res <- runClientM listRequest (ClientEnv manager adr)
   case res of
     Left err -> putStrLn $ "Error: " ++ show err
-    Right objIds -> do
-      let paths = map filePath objIds
+    Right summaries -> do
+      let paths = map fullPath summaries
       mapM_ print paths
 
-parseCommand _ _ = putStrLn "Command unrecognized"
+parseCommand _ _ _ = putStrLn "Command unrecognized"
 
-run :: IO ()
-run = do
+run :: String -> Int -> IO ()
+run dirServerAddress dirServerPort = do
   putStrLn "Please enter a command:"
   command <- getLine
   let commandParts = words command
-  parseCommand (head commandParts) (tail commandParts)
+  parseCommand (head commandParts) (tail commandParts) (url dirServerAddress dirServerPort)
 
-url :: BaseUrl
-url = BaseUrl Http "localhost" 8080 ""
+url :: String -> Int -> BaseUrl
+url s p = BaseUrl Http s p ""

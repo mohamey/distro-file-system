@@ -60,9 +60,45 @@ data ObjIdentifier = ObjIdentifier {
 instance FromJSON ObjIdentifier
 instance ToJSON ObjIdentifier
 
+-- This is a representation of each file on a file server that
+-- will be stored in the directory server database
+data DirectoryDesc = DirectoryDesc {
+  dbID :: String,
+  fName :: String,
+  fLocation :: String,
+  fileServer :: String,
+  port :: Int
+} deriving Generic
+
+instance FromJSON DirectoryDesc
+instance ToJSON DirectoryDesc
+
+-- This is sent by the client and handles moving an object
+data UpdateObject = UpdateObject {
+  old :: DirectoryDesc,
+  new :: DirectoryDesc
+} deriving Generic
+
+instance FromJSON UpdateObject
+instance ToJSON UpdateObject
+
+-- A Data type that has the file path and id
+data FileSummary = FileSummary {
+  fileId :: String,
+  fullPath :: String
+} deriving Generic
+
+instance ToJSON FileSummary
+instance FromJSON FileSummary
+
 -- The API Definition
 type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "remove" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
          :<|> "files" :> QueryParam "path" String :> Get '[JSON] FileObject
          :<|> "list" :> Get '[JSON] [ObjIdentifier]
+
+type DSAPI = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiResponse
+         :<|> "update" :> ReqBody '[JSON] UpdateObject :> Put '[JSON] ApiResponse
+         :<|> "resolve" :> ReqBody '[JSON] String :> Post '[JSON] (Either ApiResponse DirectoryDesc)
+         :<|> "list" :> Get '[JSON] [FileSummary]
