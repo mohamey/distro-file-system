@@ -91,6 +91,15 @@ data FileSummary = FileSummary {
 instance ToJSON FileSummary
 instance FromJSON FileSummary
 
+-- A representation of a file server in the directory server
+data FileServer = FileServer {
+  address :: String,
+  portNum :: Int
+} deriving Generic
+
+instance FromJSON FileServer
+instance ToJSON FileServer
+
 -- The API Definition
 type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "remove" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
@@ -102,3 +111,4 @@ type DSAPI = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiRespons
          :<|> "update" :> ReqBody '[JSON] UpdateObject :> Put '[JSON] ApiResponse
          :<|> "resolve" :> ReqBody '[JSON] String :> Post '[JSON] (Either ApiResponse DirectoryDesc)
          :<|> "list" :> Get '[JSON] [FileSummary]
+         :<|> "add" :> ReqBody '[JSON] FileServer :> Post '[JSON] ApiResponse

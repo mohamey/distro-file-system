@@ -129,9 +129,15 @@ app = serve api server
 runServer :: Int -> String -> Int -> IO ()
 runServer portNo dirServerAddress dirServerPort = do
   liftIO $ withMongoDbConnection $ do
+    -- Send fileserver details to Directory server
+    manager <- liftIO $ HPC.newManager HPC.defaultManagerSettings -- Get a HTTP manager
+    let fs = FileServer {address="127.0.0.1", portNum=portNo}
+    resp <- liftIO $ runClientM (addRequest fs) (ClientEnv manager (url dirServerAddress dirServerPort))
+    case resp of
+      Left err -> liftIO $ putStrLn $ "Error adding file server to directory server: \n" ++ show err
+      Right res -> liftIO $ putStrLn $ show (message res)
     docs <- find (select [] "files") >>= drainCursor -- Get all entries in database
     let dds = map (docToDirDesc "127.0.0.1" portNo) docs -- Convert the documents to DirectoryDesc
-    manager <- liftIO $ HPC.newManager HPC.defaultManagerSettings -- Get a HTTP manager
     -- Send list to directory server
     response <- liftIO $ runClientM (postRequest dds) (ClientEnv manager (url dirServerAddress dirServerPort))
     case response of
@@ -158,13 +164,19 @@ upload :: [DirectoryDesc] -> ClientM ApiResponse
 update :: UpdateObject -> ClientM ApiResponse
 resolve :: String -> ClientM (Either ApiResponse DirectoryDesc)
 list :: ClientM [FileSummary]
+add :: FileServer -> ClientM ApiResponse
 
 dsapi :: DP.Proxy DSAPI
 dsapi = DP.Proxy
 
-upload :<|> update :<|> resolve :<|> list = client dsapi
+upload :<|> update :<|> resolve :<|> list :<|> add = client dsapi
 
 postRequest :: [DirectoryDesc] -> ClientM ApiResponse
 postRequest postList = do
   res <- upload postList
+  return res
+
+addRequest :: FileServer -> ClientM ApiResponse
+addRequest fs = do
+  res <- add fs
   return res

@@ -137,6 +137,14 @@ docToObjs docs = PC.map fileIndexToObjId fileIndexes
   where
     fileIndexes = PC.map docToFileIndex docs
 
+
+data FileServer = FileServer {
+  address :: String,
+  portNum :: Int
+} deriving Generic
+
+instance ToJSON FileServer
+
 -- The API Definition
 type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "remove" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
@@ -148,3 +156,4 @@ type DSAPI = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiRespons
          :<|> "update" :> ReqBody '[JSON] UpdateObject :> Put '[JSON] ApiResponse
          :<|> "resolve" :> ReqBody '[JSON] String :> Post '[JSON] (Either ApiResponse DirectoryDesc)
          :<|> "list" :> Get '[JSON] [FileSummary]
+         :<|> "add" :> ReqBody '[JSON] FileServer :> Post '[JSON] ApiResponse

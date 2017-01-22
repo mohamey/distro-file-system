@@ -56,11 +56,12 @@ dupload :: [DirectoryDesc] -> ClientM ApiResponse
 dupdate :: UpdateObject -> ClientM ApiResponse
 dresolve :: String -> ClientM (Either ApiResponse DirectoryDesc)
 dlist :: ClientM [FileSummary]
+dadd :: FileServer -> ClientM ApiResponse
 
 dsapi :: DP.Proxy DSAPI
 dsapi = DP.Proxy
 
-dupload :<|> dupdate :<|> dresolve :<|> dlist = client dsapi
+dupload :<|> dupdate :<|> dresolve :<|> dlist :<|> dadd = client dsapi
 
 dResolveRequest :: String -> ClientM (Either ApiResponse DirectoryDesc)
 dResolveRequest idString = do
@@ -76,19 +77,22 @@ listRequest = do
 parseCommand :: String -> [String] -> BaseUrl -> Env -> IO ()
 parseCommand "get" (p:_) adr env = do
   manager <- HPC.newManager HPC.defaultManagerSettings
-  case Map.lookup p env of
+  case Map.lookup p env of -- Find object id of requested file
     Just fileIdString -> do
+      -- Query Directory server for file using it's id
       res <- runClientM (dResolveRequest fileIdString) (ClientEnv manager adr)
       case res of
         Left err -> do
           putStrLn $ "Error: " ++ show err
           prompt env adr
+        -- Check the directory server response
         Right dsResponse -> do
           case dsResponse of
             Left x -> do
               putStrLn (message x)
               prompt env adr
             Right dd -> do
+              -- Query the returned file server for the file
               rres <- runClientM (getRequest (fLocation dd ++ "/" ++ fName dd)) (ClientEnv manager (url (fileServer dd) (port dd)))
               case rres of
                 Left err -> do

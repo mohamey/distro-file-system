@@ -67,6 +67,26 @@ data UpdateObject = UpdateObject {
 
 instance FromJSON UpdateObject
 
+data FileServer = FileServer {
+  address :: String,
+  portNum :: Int
+} deriving Generic
+
+instance FromJSON FileServer
+instance ToJSON FileServer
+
+fServerToDoc :: FileServer -> Document
+fServerToDoc fs = [
+      "address" =: address fs,
+      "port" =: portNum fs
+  ]
+
+docToFileServer :: Document -> FileServer
+docToFileServer doc = FileServer (unescape fsAddress) fsPort
+  where
+    fsAddress = show $ DDB.valueAt "address" doc
+    fsPort = read $ show $ DDB.valueAt "port" doc
+
 -- This unescapes strings read from the database
 unescape :: String -> String
 unescape s = DLU.replace "\\" "" $ DLU.replace "\"" "" $ DLU.replace "\\\\" "" s
@@ -99,3 +119,4 @@ type API = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] UpdateObject :> Put '[JSON] ApiResponse
          :<|> "resolve" :> ReqBody '[JSON] String :> Post '[JSON] (Either ApiResponse DirectoryDesc)
          :<|> "list" :> Get '[JSON] [FileSummary]
+         :<|> "add" :> ReqBody '[JSON] FileServer :> Post '[JSON] ApiResponse

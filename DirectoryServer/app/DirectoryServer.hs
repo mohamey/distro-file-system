@@ -30,6 +30,7 @@ server = uploadFileIndexes
     :<|> updateFileIndex
     :<|> resolveFileID
     :<|> listFiles
+    :<|> addFS
 
   where
     -- Upload new file indexes to directory server
@@ -74,6 +75,12 @@ server = uploadFileIndexes
           let fileIndexes = map (docToDirDesc "_id") docs
           let fileSummaries = map dirDescToSummary fileIndexes
           return fileSummaries
+
+    addFS :: FileServer -> Handler ApiResponse
+    addFS fs = do
+      let doc = fServerToDoc fs
+      liftIO $ withMongoDbConnection (insert_ "fileservers" doc)
+      return ApiResponse {result=True, message="Successfully added file server"}
 
 -- MongoDB Stuffs
 withMongoDbConnection :: Action IO a -> IO a
