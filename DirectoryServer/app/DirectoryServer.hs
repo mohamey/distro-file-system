@@ -33,7 +33,7 @@ server = uploadFileIndexes
 
   where
     -- Upload new file indexes to directory server
-    uploadFileIndexes :: [FileIndex] -> Handler ApiResponse
+    uploadFileIndexes :: [DirectoryDesc] -> Handler ApiResponse
     uploadFileIndexes files = do
       -- Convert each index to document
       let docs = map fileIndexToDoc files
@@ -53,7 +53,7 @@ server = uploadFileIndexes
       -- Send back response
       return ApiResponse {result=True, message="Successfully modified file"}
 
-    resolveFileID :: String -> Handler (Either ApiResponse FileIndex)
+    resolveFileID :: String -> Handler (Either ApiResponse DirectoryDesc)
     resolveFileID fileID = do
       -- Build a query using file id
       let objID = read fileID :: ObjectId

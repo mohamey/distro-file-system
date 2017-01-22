@@ -14,15 +14,19 @@ import Lib
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
 import qualified Data.List as DL
+import Data.Proxy as DP
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.IO as TLIO
 import Database.MongoDB
+import qualified Network.HTTP.Client as HPC
 import Network.Wai.Handler.Warp
 import Network.Wai
 import Prelude ()
 import Prelude.Compat as PC
 import Servant
+import Servant.API
+import Servant.Client
 import System.Directory
 
 
@@ -111,11 +115,32 @@ server = uploadNewFile
         docs <- find (select [] "files") >>= drainCursor
         return (docToObjs docs)
 
+-- Get all files currently in fileserver database
+docToDirDesc :: String -> Int -> Document -> DirectoryDesc
+docToDirDesc ip portNo doc = DirectoryDesc (unescape fid) (unescape fn) (unescape fl) ip portNo
+  where
+    fid = show $ valueAt "_id" doc
+    fn = show $ valueAt "name" doc
+    fl = show $ valueAt "path" doc
+
 app :: Application
 app = serve api server
 
-runServer :: Int -> IO ()
-runServer port = run port app
+-- First send existing file list to directory server
+runServer :: Int -> String -> Int -> IO ()
+runServer portNo dirServerAddress dirServerPort = do
+  liftIO $ withMongoDbConnection $ do
+    docs <- find (select [] "files") >>= drainCursor -- Get all entries in database
+    let dds = map (docToDirDesc "127.0.0.1" portNo) docs -- Convert the documents to DirectoryDesc
+    manager <- liftIO $ HPC.newManager HPC.defaultManagerSettings -- Get a HTTP manager
+    -- Send list to directory server
+    response <- liftIO $ runClientM (postRequest dds) (ClientEnv manager (url dirServerAddress dirServerPort))
+    case response of
+      Left x -> liftIO $ putStrLn $ "Error uploading list of files to directory server:\n" ++ show x
+      Right res -> case result res of
+        True -> liftIO $ putStrLn "Successfully uploaded paths to directory server"
+        _ -> liftIO $ putStrLn "Failed to upload paths to directory server"
+    liftIO $ run portNo app
 
 -- MongoDB Stuffs
 withMongoDbConnection :: Action IO a -> IO a
@@ -127,3 +152,20 @@ withMongoDbConnection act = do
   close pipe
   return ret
 
+url :: String -> Int -> BaseUrl
+url s p = BaseUrl Http s p ""
+
+upload :: [DirectoryDesc] -> ClientM ApiResponse
+update :: UpdateObject -> ClientM ApiResponse
+resolve :: String -> ClientM (Either ApiResponse DirectoryDesc)
+list :: ClientM [FileSummary]
+
+dsapi :: DP.Proxy DSAPI
+dsapi = DP.Proxy
+
+upload :<|> update :<|> resolve :<|> list = client dsapi
+
+postRequest :: [DirectoryDesc] -> ClientM ApiResponse
+postRequest postList = do
+  res <- upload postList
+  return res

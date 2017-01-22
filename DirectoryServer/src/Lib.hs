@@ -29,7 +29,7 @@ instance ToJSON ApiResponse
 -- This will be returned on a request for a fileindex
 data FileResponse = FileResponse {
   found :: Bool,
-  fileIndex :: FileIndex
+  fileIndex :: DirectoryDesc
 } deriving Generic
 
 instance FromJSON FileResponse
@@ -37,22 +37,22 @@ instance ToJSON FileResponse
 
 
 -- Object that's stored in the database
-data FileIndex = FileIndex {
+data DirectoryDesc = DirectoryDesc {
   dbID :: String,
-  fileName :: String,
-  fileLocation :: String,
+  fName :: String,
+  fLocation :: String,
   fileServer :: String,
   port :: Int
 } deriving Generic
 
-instance FromJSON FileIndex
-instance ToJSON FileIndex
+instance FromJSON DirectoryDesc
+instance ToJSON DirectoryDesc
 
-fileIndexToDoc :: FileIndex -> Document
-fileIndexToDoc fi = ["name" =: (fileName fi), "path" =: (fileLocation fi), "server" =: (fileServer fi), "port" =: (port fi)]
+fileIndexToDoc :: DirectoryDesc -> Document
+fileIndexToDoc fi = ["name" =: (fName fi), "path" =: (fLocation fi), "server" =: (fileServer fi), "port" =: (port fi), "localID" =: (dbID fi)]
 
-docToFileIndex :: Document -> FileIndex
-docToFileIndex doc = FileIndex fid (unescape fname) (unescape fpath) (unescape fserver) portNo
+docToFileIndex :: Document -> DirectoryDesc
+docToFileIndex doc = DirectoryDesc fid (unescape fname) (unescape fpath) (unescape fserver) portNo
   where
     fid = show $ DDB.valueAt "_id" doc
     fname = show $ DDB.valueAt "name" doc
@@ -61,8 +61,8 @@ docToFileIndex doc = FileIndex fid (unescape fname) (unescape fpath) (unescape f
     portNo = read $ show $ DDB.valueAt "port" doc
 
 data UpdateObject = UpdateObject {
-  old :: FileIndex,
-  new :: FileIndex
+  old :: DirectoryDesc,
+  new :: DirectoryDesc
 } deriving Generic
 
 instance FromJSON UpdateObject
@@ -70,8 +70,8 @@ instance FromJSON UpdateObject
 unescape :: String -> String
 unescape s = DLU.replace "\\" "" $ DLU.replace "\"" "" $ DLU.replace "\\\\" "" s
 
-resolveFileIndex :: FileIndex -> T.Text
-resolveFileIndex fi = T.pack $ unescape (fileLocation fi ++ fileName fi)
+resolveFileIndex :: DirectoryDesc -> T.Text
+resolveFileIndex fi = T.pack $ unescape (fLocation fi ++ fName fi)
 
 -- Handle deleting files from the fileserver
 data ObjIdentifier = ObjIdentifier {
@@ -89,8 +89,8 @@ data FileSummary = FileSummary {
 
 instance ToJSON FileSummary
 
-fileIndexToObjId :: FileIndex -> ObjIdentifier
-fileIndexToObjId fi = ObjIdentifier $ unescape (show (resolveFileIndex fi))
+dirDescToObjId :: DirectoryDesc -> ObjIdentifier
+dirDescToObjId fi = ObjIdentifier $ unescape (show (resolveFileIndex fi))
 
 insertFile :: Document -> Action IO ()
 insertFile newFile = insert_ "files" newFile
@@ -111,23 +111,17 @@ drainCursor cur = drainCursor' cur []
 
 -- Drain a cursor into ObjIdentifiers
 docToObjs :: [Document] -> [ObjIdentifier]
-docToObjs docs = PC.map fileIndexToObjId fileIndexes
+docToObjs docs = PC.map dirDescToObjId fileIndexes
   where
     fileIndexes = PC.map docToFileIndex docs
 
-fileIndexToSummary :: FileIndex -> FileSummary
+fileIndexToSummary :: DirectoryDesc -> FileSummary
 fileIndexToSummary fi = FileSummary {fileId=fid, fullPath=p}
   where
     fid = dbID fi
-    p = (fileLocation fi) ++ "/" ++ (fileName fi)
+    p = (fLocation fi) ++ "/" ++ (fName fi)
 
--- The API Definition
--- type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
---          :<|> "remove" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
---          :<|> "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
---          :<|> "files" :> QueryParam "path" String :> Get '[JSON] FileObject
---          :<|> "list" :> Get '[JSON] [ObjIdentifier]
-type API = "new" :> ReqBody '[JSON] [FileIndex] :> Post '[JSON] ApiResponse
+type API = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] UpdateObject :> Put '[JSON] ApiResponse
-         :<|> "resolve" :> ReqBody '[JSON] String :> Post '[JSON] (Either ApiResponse FileIndex)
+         :<|> "resolve" :> ReqBody '[JSON] String :> Post '[JSON] (Either ApiResponse DirectoryDesc)
          :<|> "list" :> Get '[JSON] [FileSummary]

@@ -48,6 +48,35 @@ data FileIndex = FileIndex {
   fileLocation :: String
 } deriving Generic
 
+
+data DirectoryDesc = DirectoryDesc {
+  dbID :: String,
+  fName :: String,
+  fLocation :: String,
+  fileServer :: String,
+  port :: Int
+} deriving Generic
+
+instance FromJSON DirectoryDesc
+instance ToJSON DirectoryDesc
+
+-- A Data type that has the file path and id
+data FileSummary = FileSummary {
+  fileId :: String,
+  fullPath :: String
+} deriving Generic
+
+instance FromJSON FileSummary
+instance ToJSON FileSummary
+
+data UpdateObject = UpdateObject {
+  old :: DirectoryDesc,
+  new :: DirectoryDesc
+} deriving Generic
+
+instance FromJSON UpdateObject
+instance ToJSON UpdateObject
+
 -- Handle deleting files from the fileserver
 data ObjIdentifier = ObjIdentifier {
   filePath :: String
@@ -109,3 +138,8 @@ type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
          :<|> "files" :> QueryParam "path" String :> Get '[JSON] FileObject
          :<|> "list" :> Get '[JSON] [ObjIdentifier]
+
+type DSAPI = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiResponse
+         :<|> "update" :> ReqBody '[JSON] UpdateObject :> Put '[JSON] ApiResponse
+         :<|> "resolve" :> ReqBody '[JSON] String :> Post '[JSON] (Either ApiResponse DirectoryDesc)
+         :<|> "list" :> Get '[JSON] [FileSummary]
