@@ -112,3 +112,4 @@ type DSAPI = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiRespons
          :<|> "resolve" :> ReqBody '[JSON] String :> Post '[JSON] (Either ApiResponse DirectoryDesc)
          :<|> "list" :> Get '[JSON] [FileSummary]
          :<|> "add" :> ReqBody '[JSON] FileServer :> Post '[JSON] ApiResponse
+         :<|> "getFs" :> Get '[JSON] FileServer

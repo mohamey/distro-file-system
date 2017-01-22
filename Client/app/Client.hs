@@ -57,11 +57,12 @@ dupdate :: UpdateObject -> ClientM ApiResponse
 dresolve :: String -> ClientM (Either ApiResponse DirectoryDesc)
 dlist :: ClientM [FileSummary]
 dadd :: FileServer -> ClientM ApiResponse
+dgetFs :: ClientM FileServer
 
 dsapi :: DP.Proxy DSAPI
 dsapi = DP.Proxy
 
-dupload :<|> dupdate :<|> dresolve :<|> dlist :<|> dadd = client dsapi
+dupload :<|> dupdate :<|> dresolve :<|> dlist :<|> dadd :<|> dgetFs = client dsapi
 
 dResolveRequest :: String -> ClientM (Either ApiResponse DirectoryDesc)
 dResolveRequest idString = do
@@ -71,6 +72,11 @@ dResolveRequest idString = do
 listRequest :: ClientM [FileSummary]
 listRequest = do
   res <- dlist
+  return res
+
+getFileServer :: ClientM FileServer
+getFileServer = do
+  res <- dgetFs
   return res
 
 -- Args list should just have one index, the requested path
@@ -107,23 +113,30 @@ parseCommand "get" (p:_) adr env = do
 
 parseCommand "post" (f:_) adr env = liftIO $ do
   manager <- HPC.newManager HPC.defaultManagerSettings
-  doesFileExist f >>=
-    (\res -> if res then
-        TLIO.readFile f >>=
-          (\fileText -> runClientM (postRequest (FileObject f fileText)) (ClientEnv manager adr) >>=
-            (\response -> case response of
-                Left err -> do
-                  putStrLn $ "Error: " ++ show err
-                  prompt env adr
-                Right apiRes -> do
-                  case (result apiRes) of
-                    False -> do
-                      putStrLn $ "Post failed: " ++ (message apiRes)
-                      prompt env adr
-                    True -> do
-                      putStrLn $ "Post Successful: " ++ message(apiRes))) >> prompt env adr
-   else do
-        putStrLn "File not found") >> prompt env adr
+  fileExists <- doesFileExist f
+  case fileExists of
+    True -> do
+      -- Get File Server to send to
+      response <- runClientM getFileServer (ClientEnv manager adr)
+      case response of
+        Left err -> do
+          putStrLn $ "Error requesting file server for POST: \n" ++ show err
+          prompt env adr
+        Right fs -> do
+          let serverAddress = address fs
+          let serverPort = portNum fs
+          fileContents <- TLIO.readFile f
+          res <- runClientM (postRequest (FileObject f fileContents)) (ClientEnv manager (url serverAddress serverPort))
+          case res of
+            Left err -> do
+              putStrLn $ "Error posting file to fileserver\n" ++ show err
+              prompt env adr
+            Right response -> do
+              putStrLn $ "Response from fileserver: \n" ++ show (message response)
+              prompt env adr
+    False -> do
+        putStrLn "File not found"
+        prompt env adr
 
 parseCommand "put" (f:_) adr env = liftIO $ do
   manager <- HPC.newManager HPC.defaultManagerSettings
@@ -178,8 +191,7 @@ parseCommand "list" _  adr env = liftIO $ do
       mapM_ print keys
       prompt newEnv adr
 
-parseCommand _ [] adr e = putStrLn "No Arguments provided" >> prompt e adr
-parseCommand _ _ _ _ = putStrLn "Command unrecognized"
+parseCommand _ _ adr e = putStrLn "Command unrecognized" >> prompt e adr
 
 run :: String -> Int -> IO ()
 run dirServerAddress dirServerPort = do
