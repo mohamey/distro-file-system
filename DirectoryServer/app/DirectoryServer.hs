@@ -36,7 +36,7 @@ server = uploadFileIndexes
     uploadFileIndexes :: [DirectoryDesc] -> Handler ApiResponse
     uploadFileIndexes files = do
       -- Convert each index to document
-      let docs = map fileIndexToDoc files
+      let docs = map dirDescToDoc files
       -- Insert each document into DB using insertAll
       liftIO $ withMongoDbConnection (insertAll_ "files" docs )
       -- Send back response
@@ -44,8 +44,8 @@ server = uploadFileIndexes
 
     updateFileIndex :: UpdateObject -> Handler ApiResponse
     updateFileIndex updateObj = do
-      let oldFileDoc = fileIndexToDoc $ old updateObj
-      let newFileDoc = fileIndexToDoc $ new updateObj
+      let oldFileDoc = dirDescToDoc $ old updateObj
+      let newFileDoc = dirDescToDoc $ new updateObj
 
       -- Replace the old file index with the new one
       liftIO $ withMongoDbConnection $ replace (select oldFileDoc "files") newFileDoc
@@ -61,7 +61,7 @@ server = uploadFileIndexes
       res <- liftIO $ withMongoDbConnection $ findOne query
       -- Send back either the file index or an api response
       case res of
-        Just fi -> return $ Right $docToFileIndex fi
+        Just fi -> return $ Right $ docToDirDesc fi
         Nothing -> return $ Left ApiResponse {result=False, message="File not found by ID"}
 
     listFiles :: Handler [FileSummary]
@@ -71,8 +71,8 @@ server = uploadFileIndexes
       liftIO $ do
         withMongoDbConnection $ do
           docs <- find query >>= drainCursor
-          let fileIndexes = map docToFileIndex docs
-          let fileSummaries = map fileIndexToSummary fileIndexes
+          let fileIndexes = map docToDirDesc docs
+          let fileSummaries = map dirDescToSummary fileIndexes
           return fileSummaries
 
 -- MongoDB Stuffs
