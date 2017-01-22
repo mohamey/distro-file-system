@@ -21,6 +21,7 @@ import Network.Wai
 import Prelude ()
 import Prelude.Compat as PC
 import Servant
+import System.Random
 
 api :: Proxy API
 api = Proxy
@@ -31,6 +32,7 @@ server = uploadFileIndexes
     :<|> resolveFileID
     :<|> listFiles
     :<|> addFS
+    :<|> getFS
 
   where
     -- Upload new file indexes to directory server
@@ -81,6 +83,16 @@ server = uploadFileIndexes
       let doc = fServerToDoc fs
       liftIO $ withMongoDbConnection (insert_ "fileservers" doc)
       return ApiResponse {result=True, message="Successfully added file server"}
+
+    getFS :: Handler FileServer
+    getFS = do
+      let query = select [] "fileservers"
+      liftIO $ do
+        withMongoDbConnection $ do
+          docs <- find query >>= drainCursor
+          let fileservers = map docToFileServer docs
+          fsIndex <- liftIO $ randomRIO (0, ((length fileservers) -1))
+          return $ fileservers !! fsIndex
 
 -- MongoDB Stuffs
 withMongoDbConnection :: Action IO a -> IO a

@@ -37,6 +37,7 @@ executable DirectoryServer
                      , directory
                      , DirectoryServer
                      , mongoDB
+                     , random >= 1.1
                      , resourcet >= 1.1
                      , servant-server >= 0.8
                      , text >= 1.2
