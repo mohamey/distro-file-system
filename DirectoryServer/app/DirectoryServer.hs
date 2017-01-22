@@ -61,7 +61,7 @@ server = uploadFileIndexes
       res <- liftIO $ withMongoDbConnection $ findOne query
       -- Send back either the file index or an api response
       case res of
-        Just fi -> return $ Right $ docToDirDesc fi
+        Just fi -> return $ Right $ docToDirDesc "localID" fi
         Nothing -> return $ Left ApiResponse {result=False, message="File not found by ID"}
 
     listFiles :: Handler [FileSummary]
@@ -71,7 +71,7 @@ server = uploadFileIndexes
       liftIO $ do
         withMongoDbConnection $ do
           docs <- find query >>= drainCursor
-          let fileIndexes = map docToDirDesc docs
+          let fileIndexes = map (docToDirDesc "_id") docs
           let fileSummaries = map dirDescToSummary fileIndexes
           return fileSummaries
 

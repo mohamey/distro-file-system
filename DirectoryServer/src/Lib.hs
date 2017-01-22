@@ -9,6 +9,7 @@ module Lib where
 import Data.Aeson
 import Data.Bson
 import Data.List.Utils as DLU
+import Data.Text
 import Database.MongoDB as DDB
 import GHC.Generics
 import Prelude ()
@@ -49,10 +50,10 @@ dirDescToDoc fi = [
   ]
 
 -- This converts a database document into a DirectoryDesc record
-docToDirDesc :: Document -> DirectoryDesc
-docToDirDesc doc = DirectoryDesc fid (unescape fname) (unescape fpath) (unescape fserver) portNo
+docToDirDesc :: Text -> Document -> DirectoryDesc
+docToDirDesc idCol doc = DirectoryDesc fid (unescape fname) (unescape fpath) (unescape fserver) portNo
   where
-    fid = show $ DDB.valueAt "_id" doc
+    fid = show $ DDB.valueAt idCol doc
     fname = show $ DDB.valueAt "name" doc
     fpath = (show $ DDB.valueAt "path" doc) ++ "/"
     fserver = (show $ DDB.valueAt "server" doc)
@@ -92,7 +93,7 @@ dirDescToSummary :: DirectoryDesc -> FileSummary
 dirDescToSummary fi = FileSummary {fileId=fid, fullPath=p}
   where
     fid = dbID fi
-    p = (fLocation fi) ++ "/" ++ (fName fi)
+    p = (fLocation fi) ++ (fName fi)
 
 type API = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] UpdateObject :> Put '[JSON] ApiResponse
