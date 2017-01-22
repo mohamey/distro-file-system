@@ -23,12 +23,11 @@ import Prelude.Compat as PC
 import Servant
 
 -- A representation of files on the server
--- This will be stored in the mongodb database
+-- It contains the file path and its contents
 data FileObject = FileObject {
   path :: String,
   fileContent :: TL.Text
 } deriving Generic
-
 
 instance FromJSON FileObject
 instance ToJSON FileObject
@@ -49,6 +48,8 @@ data FileIndex = FileIndex {
 } deriving Generic
 
 
+-- A Record representing how file details are stored
+-- on the directory server
 data DirectoryDesc = DirectoryDesc {
   dbID :: String,
   fName :: String,
@@ -61,6 +62,8 @@ instance FromJSON DirectoryDesc
 instance ToJSON DirectoryDesc
 
 -- A Data type that has the file path and id
+-- It is a trimmed down identifier of files listed
+-- in directory server
 data FileSummary = FileSummary {
   fileId :: String,
   fullPath :: String
@@ -69,6 +72,8 @@ data FileSummary = FileSummary {
 instance FromJSON FileSummary
 instance ToJSON FileSummary
 
+-- This object is sent to carry out a move file operation
+-- It details the files previous location and then it's new location
 data UpdateObject = UpdateObject {
   old :: DirectoryDesc,
   new :: DirectoryDesc

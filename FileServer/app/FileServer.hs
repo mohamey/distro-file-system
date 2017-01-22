@@ -25,7 +25,6 @@ import Network.Wai
 import Prelude ()
 import Prelude.Compat as PC
 import Servant
-import Servant.API
 import Servant.Client
 import System.Directory
 
