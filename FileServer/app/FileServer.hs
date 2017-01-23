@@ -31,12 +31,12 @@ import System.Directory
 api :: Proxy API
 api = Proxy
 
-server :: Server API
-server = uploadNewFile
-    :<|> deleteFile
-    :<|> updateFile
-    :<|> getFile
-    :<|> listFiles
+server :: Int -> BaseUrl -> Server API
+server pn adr = uploadNewFile
+              :<|> deleteFile
+              :<|> updateFile
+              :<|> getFile
+              :<|> listFiles
 
   where
     -- Upload a new file to the server
@@ -50,15 +50,37 @@ server = uploadNewFile
       let actualPath = actualDirectory ++ "/" ++ (TL.unpack file)
       putStrLn actualPath
       let fileDoc = FileIndex {fileName=(TL.unpack file), fileLocation=directory}
-      doesFileExist actualPath >>=
-        (\res -> if res then
-            return ApiResponse {result=False, message="File already exists"}
-          else
-            createDirectoryIfMissing True actualDirectory >> -- Creates parent directories too
-              TLIO.writeFile actualPath (fileContent newFile) >>
-                -- Write new file to the database
-                withMongoDbConnection (insertFile $ fileIndexToDoc fileDoc) >>
-                  return ApiResponse {result=True, message="Success"})
+      fileExists <- doesFileExist actualPath
+      case fileExists of
+        True -> return ApiResponse {result=False, message="File already exists"}
+        False -> do
+            createDirectoryIfMissing True actualDirectory -- Creates parent directories too
+            TLIO.writeFile actualPath (fileContent newFile)
+            -- Write new file to the database
+            stringId <- withMongoDbConnection (insert "files" $ fileIndexToDoc fileDoc)
+            -- -- Convert FileIndex to [DirectoryDesc]
+            let dd = DirectoryDesc {
+                  dbID = show stringId,
+                  fName = show file,
+                  fLocation = directory,
+                  fileServer = "127.0.0.1",
+                  port = pn
+            }
+            -- Send dd to directory server
+            manager <- liftIO $ HPC.newManager HPC.defaultManagerSettings -- Get a HTTP manager
+            response <- liftIO $ runClientM (postRequest [dd]) (ClientEnv manager adr)
+            case response of
+              Left err -> do
+                putStrLn $ "Error posting new file to directory server: \n" ++ show err
+                return ApiResponse {result=False, message="Failed to post to directory server"}
+              Right res -> do
+                case (result res) of
+                  True -> do
+                    putStrLn "Successfully added file to directory server"
+                    return ApiResponse {result=True, message="Success"}
+                  False -> do
+                    putStrLn "Failed to add file to directory server"
+                    return ApiResponse {result=False, message="Failed to update directory server"}
 
     deleteFile :: ObjIdentifier -> Handler ApiResponse
     deleteFile specifiedFile = liftIO $ do
@@ -120,8 +142,8 @@ docToDirDesc ip portNo doc = DirectoryDesc (unescape fid) (unescape fn) (unescap
     fn = show $ valueAt "name" doc
     fl = show $ valueAt "path" doc
 
-app :: Application
-app = serve api server
+app :: Int -> BaseUrl -> Application
+app pn adr = serve api (server pn adr)
 
 -- First send existing file list to directory server
 runServer :: Int -> String -> Int -> IO ()
@@ -143,7 +165,7 @@ runServer portNo dirServerAddress dirServerPort = do
       Right res -> case result res of
         True -> liftIO $ putStrLn "Successfully uploaded paths to directory server"
         _ -> liftIO $ putStrLn "Failed to upload paths to directory server"
-    liftIO $ run portNo app
+    liftIO $ run portNo (app portNo (url dirServerAddress dirServerPort))
 
 -- MongoDB Stuffs
 withMongoDbConnection :: Action IO a -> IO a

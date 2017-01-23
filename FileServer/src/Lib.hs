@@ -47,7 +47,6 @@ data FileIndex = FileIndex {
   fileLocation :: String
 } deriving Generic
 
-
 -- A Record representing how file details are stored
 -- on the directory server
 data DirectoryDesc = DirectoryDesc {
@@ -146,6 +145,7 @@ data FileServer = FileServer {
 instance ToJSON FileServer
 instance FromJSON FileServer
 
+  
 -- The API Definition
 type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "remove" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
