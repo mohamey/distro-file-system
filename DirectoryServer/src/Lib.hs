@@ -99,6 +99,7 @@ data FileSummary = FileSummary {
 
 instance ToJSON FileSummary
 
+
 drainCursor :: Cursor -> Action IO [Document]
 drainCursor cur = drainCursor' cur []
   where
@@ -120,3 +121,4 @@ type API = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiResponse
          :<|> "list" :> Get '[JSON] [FileSummary]
          :<|> "add" :> ReqBody '[JSON] FileServer :> Post '[JSON] ApiResponse
          :<|> "getFs" :> Get '[JSON] FileServer
+         :<|> "delete" :> ReqBody '[JSON] DirectoryDesc :> Delete '[JSON] ApiResponse

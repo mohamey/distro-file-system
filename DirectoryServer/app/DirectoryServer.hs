@@ -33,6 +33,7 @@ server = uploadFileIndexes
     :<|> listFiles
     :<|> addFS
     :<|> getFS
+    :<|> deleteDD
 
   where
     -- Upload new file indexes to directory server
@@ -93,6 +94,12 @@ server = uploadFileIndexes
           let fileservers = map docToFileServer docs
           fsIndex <- liftIO $ randomRIO (0, ((length fileservers) -1))
           return $ fileservers !! fsIndex
+
+    deleteDD :: DirectoryDesc -> Handler ApiResponse
+    deleteDD dd = do
+      -- Resolve file by ID
+        liftIO $ withMongoDbConnection $ deleteOne $ select (dirDescToDoc dd) "files"
+        return ApiResponse{result=True, message="File deleted"}
 
 -- MongoDB Stuffs
 withMongoDbConnection :: Action IO a -> IO a
