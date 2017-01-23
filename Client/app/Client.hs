@@ -52,17 +52,14 @@ deleteRequest fpath = do
 
 ------------------------------- Directory Server API ------------------------------------------
 
-dupload :: [DirectoryDesc] -> ClientM ApiResponse
-dupdate :: UpdateObject -> ClientM ApiResponse
 dresolve :: String -> ClientM (Either ApiResponse DirectoryDesc)
 dlist :: ClientM [FileSummary]
-dadd :: FileServer -> ClientM ApiResponse
 dgetFs :: ClientM FileServer
 
 dsapi :: DP.Proxy DSAPI
 dsapi = DP.Proxy
 
-dupload :<|> dupdate :<|> dresolve :<|> dlist :<|> dadd :<|> dgetFs = client dsapi
+dresolve :<|> dlist :<|> dgetFs = client dsapi
 
 dResolveRequest :: String -> ClientM (Either ApiResponse DirectoryDesc)
 dResolveRequest idString = do
@@ -131,8 +128,8 @@ parseCommand "post" (f:_) adr env = liftIO $ do
             Left err -> do
               putStrLn $ "Error posting file to fileserver\n" ++ show err
               prompt env adr
-            Right response -> do
-              putStrLn $ "Response from fileserver: \n" ++ show (message response)
+            Right rresponse -> do
+              putStrLn $ "Response from fileserver: \n" ++ show (message rresponse)
               prompt env adr
     False -> do
         putStrLn "File not found"
@@ -162,19 +159,33 @@ parseCommand "put" (f:_) adr env = liftIO $ do
 
 parseCommand "delete" (fp:_) adr env = liftIO $ do
   manager <- HPC.newManager HPC.defaultManagerSettings
-  res <- runClientM (deleteRequest (ObjIdentifier fp)) (ClientEnv manager adr)
-  case res of
-    Left err -> do
-      putStrLn $ "Error: " ++ show err
+  case Map.lookup fp env of -- Find object id of requested file
+    Nothing -> do
+      putStrLn "File path did not resolve locally"
       prompt env adr
-    Right apiRes -> do
-      case (result apiRes) of
-        False -> do
-          putStrLn $ "Delete failed: " ++ (message apiRes)
+    Just fileIdString -> do
+      -- Query Directory server for file using it's id
+      res <- runClientM (dResolveRequest fileIdString) (ClientEnv manager adr)
+      case res of
+        Left err -> do
+          putStrLn $ "Failed to resolve file path: \n" ++ (show err)
           prompt env adr
-        True -> do
-          putStrLn $ "Delete Successful: " ++ message(apiRes)
-          prompt env adr
+        Right response -> do
+          case response of
+            Left apiRes -> do
+              putStrLn $ "Error resolving file on directory server:\n" ++ (message apiRes)
+              prompt env adr
+            Right dd -> do
+              -- Using file path and dd details, send delete request
+              let objId = ObjIdentifier {filePath=fp}
+              rres <- runClientM (deleteRequest objId) (ClientEnv manager (url (fileServer dd) (port dd)))
+              case rres of
+                Left error -> do
+                  putStrLn $ "Servant error: \n" ++ show error
+                  prompt env adr
+                Right deleteResponse -> do
+                  putStrLn (message deleteResponse)
+                  prompt env adr
 
 parseCommand "list" _  adr env = liftIO $ do
   manager <- HPC.newManager HPC.defaultManagerSettings
