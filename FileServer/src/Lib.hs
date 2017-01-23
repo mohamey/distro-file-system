@@ -136,6 +136,12 @@ docToObjs docs = PC.map fileIndexToObjId fileIndexes
   where
     fileIndexes = PC.map docToFileIndex docs
 
+docToDirDesc :: String -> Int -> Document -> DirectoryDesc
+docToDirDesc ip portNo doc = DirectoryDesc (unescape fid) (unescape fn) (unescape fl) ip portNo
+  where
+    fid = show $ valueAt "_id" doc
+    fn = show $ valueAt "name" doc
+    fl = show $ valueAt "path" doc
 
 data FileServer = FileServer {
   address :: String,
@@ -145,7 +151,6 @@ data FileServer = FileServer {
 instance ToJSON FileServer
 instance FromJSON FileServer
 
-  
 -- The API Definition
 type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "remove" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
@@ -155,7 +160,5 @@ type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
 
 type DSAPI = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] UpdateObject :> Put '[JSON] ApiResponse
-         :<|> "resolve" :> ReqBody '[JSON] String :> Post '[JSON] (Either ApiResponse DirectoryDesc)
-         :<|> "list" :> Get '[JSON] [FileSummary]
          :<|> "add" :> ReqBody '[JSON] FileServer :> Post '[JSON] ApiResponse
-         :<|> "getFs" :> Get '[JSON] FileServer
+         :<|> "delete" :> ReqBody '[JSON] DirectoryDesc :> Delete '[JSON] ApiResponse

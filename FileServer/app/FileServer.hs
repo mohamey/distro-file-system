@@ -91,15 +91,31 @@ server pn adr = uploadNewFile
       let directory = if (TL.head dir) == '/' then "static-files" ++ (TL.unpack dir) else "static-files/" ++ (TL.unpack dir)
       let actualPath = directory ++ "/" ++ TL.unpack specFileName
       -- Create fileobject for mongodb
-      let fi = FileIndex {fileName=(TL.unpack specFileName), fileLocation=directory}
+      let fi = FileIndex {fileName=(TL.unpack specFileName), fileLocation=(TL.unpack dir)}
       let mongoDoc = fileIndexToDoc fi
-      doesFileExist actualPath >>= -- Check if file exists
-        (\res -> if res then
-          removeFile actualPath >> -- Remove the file
-            withMongoDbConnection (deleteOne $ select mongoDoc "files") >>
-              return ApiResponse {result=True, message="File successfully removed"}
-         else
-          return ApiResponse {result=False, message="File does not exist"})
+      fileExists <- doesFileExist actualPath
+      case fileExists of
+        False -> do return ApiResponse {result=False, message="File not found on fileserver"}
+        True -> do
+          maybeDoc <- withMongoDbConnection (findOne $ select mongoDoc "files")
+          case maybeDoc of
+            Nothing -> do
+              putStrLn $ "Specified file not found:\n" ++ show mongoDoc
+              return ApiResponse{result=False, message="File not found"}
+            Just doc -> do
+              withMongoDbConnection (deleteOne $ select mongoDoc "files")
+              -- Send delete request to directory server
+              let dd = docToDirDesc "127.0.0.1" pn doc
+              -- Send delete request to directory server
+              manager <- liftIO $ HPC.newManager HPC.defaultManagerSettings -- Get a HTTP manager
+              response <- liftIO $ runClientM (deleteRequest dd) (ClientEnv manager adr)
+              case response of
+                Left err -> do
+                  putStrLn $ "An error occurred deleting the file listing from the directory server:\n" ++ show err
+                  return ApiResponse{result=False, message="An error occurred deleting file from directory server"}
+                Right res -> do
+                  removeFile actualPath
+                  return res
 
     updateFile :: FileObject -> Handler ApiResponse
     updateFile specifiedFile = liftIO $ do
@@ -133,14 +149,6 @@ server pn adr = uploadNewFile
       withMongoDbConnection $ do
         docs <- find (select [] "files") >>= drainCursor
         return (docToObjs docs)
-
--- Get all files currently in fileserver database
-docToDirDesc :: String -> Int -> Document -> DirectoryDesc
-docToDirDesc ip portNo doc = DirectoryDesc (unescape fid) (unescape fn) (unescape fl) ip portNo
-  where
-    fid = show $ valueAt "_id" doc
-    fn = show $ valueAt "name" doc
-    fl = show $ valueAt "path" doc
 
 app :: Int -> BaseUrl -> Application
 app pn adr = serve api (server pn adr)
@@ -182,15 +190,13 @@ url s p = BaseUrl Http s p ""
 
 upload :: [DirectoryDesc] -> ClientM ApiResponse
 update :: UpdateObject -> ClientM ApiResponse
-resolve :: String -> ClientM (Either ApiResponse DirectoryDesc)
-list :: ClientM [FileSummary]
 add :: FileServer -> ClientM ApiResponse
-getFs :: ClientM FileServer
+deleteDD :: DirectoryDesc -> ClientM ApiResponse
 
 dsapi :: DP.Proxy DSAPI
 dsapi = DP.Proxy
 
-upload :<|> update :<|> resolve :<|> list :<|> add :<|> getFs = client dsapi
+upload :<|> update :<|> add :<|> deleteDD = client dsapi
 
 postRequest :: [DirectoryDesc] -> ClientM ApiResponse
 postRequest postList = do
@@ -200,4 +206,9 @@ postRequest postList = do
 addRequest :: FileServer -> ClientM ApiResponse
 addRequest fs = do
   res <- add fs
+  return res
+
+deleteRequest :: DirectoryDesc -> ClientM ApiResponse
+deleteRequest dd = do
+  res <- deleteDD dd
   return res
