@@ -23,13 +23,15 @@ import System.Process
 upload :: FileObject -> ClientM ApiResponse
 remove :: ObjIdentifier -> ClientM ApiResponse
 update :: FileObject -> ClientM ApiResponse
+closeF :: FileObject -> ClientM ApiResponse
+openF :: Maybe String -> ClientM (Either ApiResponse FileObject)
 get :: Maybe String -> ClientM FileObject
 list :: ClientM [ObjIdentifier]
 
 papi :: DP.Proxy API
 papi = DP.Proxy
 
-upload :<|> remove :<|> update :<|> get :<|> list = client papi
+upload :<|> remove :<|> update :<|> closeF :<|> openF :<|> get :<|> list = client papi
 
 -- Write queries to be performed
 getRequest :: String -> ClientM FileObject
@@ -45,6 +47,16 @@ postRequest postFile = do
 putRequest :: FileObject -> ClientM ApiResponse
 putRequest putFile = do
   res <- update putFile
+  return res
+
+closeRequest :: FileObject -> ClientM ApiResponse
+closeRequest fo = do
+  res <- closeF fo
+  return res
+
+openRequest :: String -> ClientM (Either ApiResponse FileObject)
+openRequest s = do
+  res <- openF (Just s)
   return res
 
 deleteRequest :: ObjIdentifier -> ClientM ApiResponse
@@ -211,37 +223,42 @@ parseCommand "open" (p:_) adr env = do
             Right dd -> do
               -- Query the returned file server for the file
               let fsUrl = url (fileServer dd) (port dd)
-              rres <- runClientM (getRequest (fLocation dd ++ "/" ++ fName dd)) (ClientEnv manager fsUrl)
+              rres <- runClientM (openRequest (fLocation dd ++ fName dd)) (ClientEnv manager fsUrl)
               case rres of
                 Left err -> do
                   putStrLn $ "Error retrieving file from file server:\n" ++ show err
                   prompt env adr
-                Right x -> do
-                  -- Write the received file locally
-                  createDirectoryIfMissing True "temp"
-                  let nameParts = TL.splitOn "/" (TL.pack p)
-                  let tempPath = "temp/" ++ (TL.unpack $ last nameParts)
-                  TLIO.writeFile tempPath (fileContent x)
-                  -- Now open the file in text editor
-                  procHandle <- spawnCommand $ "vim " ++ tempPath
-                  _ <- waitForProcess procHandle
-                  -- Update the file at the fileserver
-                  f <- TLIO.readFile tempPath
-                  let fObject = FileObject {path=p, fileContent=f}
-                  updateRes <- runClientM (putRequest fObject) (ClientEnv manager fsUrl)
-                  case updateRes of
-                    Left err -> do
-                      putStrLn $ "Servant error uploading updated file\n" ++ show err
+                Right eitherRes -> do
+                  case eitherRes of
+                    Left y -> do
+                      putStrLn $ "Could not retrieve file from fileserver\n" ++ show (message y)
                       prompt env adr
-                    Right resres -> do
-                      case result resres of
-                        True -> do
-                          removeFile tempPath
-                          putStrLn "Successfully updated file"
+                    Right x -> do
+                      -- Write the received file locally
+                      createDirectoryIfMissing True "temp"
+                      let nameParts = TL.splitOn "/" (TL.pack p)
+                      let tempPath = "temp/" ++ (TL.unpack $ last nameParts)
+                      TLIO.writeFile tempPath (fileContent x)
+                      -- Now open the file in text editor
+                      procHandle <- spawnCommand $ "vim " ++ tempPath
+                      _ <- waitForProcess procHandle
+                      -- Update the file at the fileserver
+                      f <- TLIO.readFile tempPath
+                      let fObject = FileObject {path=p, fileContent=f}
+                      updateRes <- runClientM (closeRequest fObject) (ClientEnv manager fsUrl)
+                      case updateRes of
+                        Left err -> do
+                          putStrLn $ "Servant error uploading updated file\n" ++ show err
                           prompt env adr
-                        False -> do
-                          putStrLn "Failed to upload updated file"
-                          prompt env adr
+                        Right resres -> do
+                          case result resres of
+                            True -> do
+                              removeFile tempPath
+                              putStrLn "Successfully updated file"
+                              prompt env adr
+                            False -> do
+                              putStrLn "Failed to upload updated file"
+                              prompt env adr
 
 parseCommand "list" _  adr env = liftIO $ do
   manager <- HPC.newManager HPC.defaultManagerSettings
