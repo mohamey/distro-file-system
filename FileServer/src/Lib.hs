@@ -155,6 +155,8 @@ instance FromJSON FileServer
 type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "remove" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
+         :<|> "close" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
+         :<|> "open" :> QueryParam "path" String :> Get '[JSON] (Either ApiResponse FileObject)
          :<|> "files" :> QueryParam "path" String :> Get '[JSON] FileObject
          :<|> "list" :> Get '[JSON] [ObjIdentifier]
 

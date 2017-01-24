@@ -35,6 +35,8 @@ server :: Int -> BaseUrl -> Server API
 server pn adr = uploadNewFile
               :<|> deleteFile
               :<|> updateFile
+              :<|> closeFile
+              :<|> openFile
               :<|> getFile
               :<|> listFiles
 
@@ -143,6 +145,40 @@ server pn adr = uploadNewFile
                 (\txt -> return FileObject{path=p, fileContent=txt})
           else
               return FileObject{path="", fileContent="File Not Found"})
+
+    closeFile :: FileObject -> Handler ApiResponse
+    closeFile fObject = do
+      -- Remove the file listing from the database of opened files
+      liftIO $ putStrLn (path fObject)
+      liftIO $ withMongoDbConnection (deleteOne $ select ["path" =: (path fObject)] "openFiles")
+      -- Call update function with file object
+      updateFile fObject
+
+    openFile :: Maybe String -> Handler (Either ApiResponse FileObject)
+    openFile mp = do
+      case mp of
+        Nothing -> do
+          liftIO $ putStrLn "path not specified"
+          return $ Left ApiResponse {result=False, message="File path not specified"}
+        Just p -> do
+          liftIO $ putStrLn "Getting the file"
+          let actualPath = "static-files" ++ p
+          fileExists <- liftIO $ doesFileExist actualPath
+          case fileExists of
+            False -> do
+              return $ Left ApiResponse {result=False, message="File not found on file server"}
+            True -> do
+              -- Check the DB to make sure its not open
+              maybeDoc <- liftIO $ withMongoDbConnection (findOne $ select ["path" =: p] "openFiles")
+              case maybeDoc of
+                Just _ -> return $ Left ApiResponse {result=False, message="File already opened by another client"}
+                Nothing -> do
+                  fContent <- liftIO $ TLIO.readFile actualPath
+                  -- Add file path to list of open files
+                  liftIO $ putStrLn p
+                  liftIO $ withMongoDbConnection (insert_ "openFiles" ["path" =: p])
+                  -- Send file back to Client
+                  return $ Right FileObject{path=p, fileContent=fContent}
 
     listFiles :: Handler [ObjIdentifier]
     listFiles = liftIO $ do
