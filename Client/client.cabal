@@ -39,6 +39,7 @@ executable client
                      , containers >= 0.5
                      , directory
                      , http-client
+                     , process
                      , servant
                      , servant-client
                      , text

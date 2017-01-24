@@ -10,11 +10,13 @@ import Lib
 import Control.Monad.IO.Class
 import qualified Data.Map.Strict as Map
 import Data.Proxy as DP
+import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.IO as TLIO
 import qualified Network.HTTP.Client as HPC
 import Servant.API
 import Servant.Client
 import System.Directory
+import System.Process
 
 -------------------------------- File Server API --------------------------------------------
 
@@ -186,6 +188,60 @@ parseCommand "delete" (fp:_) adr env = liftIO $ do
                 Right deleteResponse -> do
                   putStrLn (message deleteResponse)
                   prompt env adr
+
+parseCommand "open" (p:_) adr env = do
+  manager <- HPC.newManager HPC.defaultManagerSettings
+  case Map.lookup p env of -- Find object id of requested file
+    Nothing -> do
+      putStrLn "Could not resolve file path locally"
+      prompt env adr
+    Just fileIdString -> do
+      -- Query Directory server for file using it's id
+      res <- runClientM (dResolveRequest fileIdString) (ClientEnv manager adr)
+      case res of
+        Left err -> do
+          putStrLn $ "Error: " ++ show err
+          prompt env adr
+        -- Check the directory server response
+        Right dsResponse -> do
+          case dsResponse of
+            Left x -> do
+              putStrLn (message x)
+              prompt env adr
+            Right dd -> do
+              -- Query the returned file server for the file
+              let fsUrl = url (fileServer dd) (port dd)
+              rres <- runClientM (getRequest (fLocation dd ++ "/" ++ fName dd)) (ClientEnv manager fsUrl)
+              case rres of
+                Left err -> do
+                  putStrLn $ "Error retrieving file from file server:\n" ++ show err
+                  prompt env adr
+                Right x -> do
+                  -- Write the received file locally
+                  createDirectoryIfMissing True "temp"
+                  let nameParts = TL.splitOn "/" (TL.pack p)
+                  let tempPath = "temp/" ++ (TL.unpack $ last nameParts)
+                  TLIO.writeFile tempPath (fileContent x)
+                  -- Now open the file in text editor
+                  procHandle <- spawnCommand $ "vim " ++ tempPath
+                  _ <- waitForProcess procHandle
+                  -- Update the file at the fileserver
+                  f <- TLIO.readFile tempPath
+                  let fObject = FileObject {path=p, fileContent=f}
+                  updateRes <- runClientM (putRequest fObject) (ClientEnv manager fsUrl)
+                  case updateRes of
+                    Left err -> do
+                      putStrLn $ "Servant error uploading updated file\n" ++ show err
+                      prompt env adr
+                    Right resres -> do
+                      case result resres of
+                        True -> do
+                          removeFile tempPath
+                          putStrLn "Successfully updated file"
+                          prompt env adr
+                        False -> do
+                          putStrLn "Failed to upload updated file"
+                          prompt env adr
 
 parseCommand "list" _  adr env = liftIO $ do
   manager <- HPC.newManager HPC.defaultManagerSettings
