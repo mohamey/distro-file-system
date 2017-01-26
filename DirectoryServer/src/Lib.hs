@@ -33,20 +33,21 @@ data DirectoryDesc = DirectoryDesc {
   fLocation :: String,
   fileServer :: String,
   port :: Int
-} deriving Generic
+} deriving (Generic, Eq)
 
 instance FromJSON DirectoryDesc
 instance ToJSON DirectoryDesc
 
 -- This takes a DirectoryDesc object and converts it to a Document
 -- to be stored in the database
-dirDescToDoc :: DirectoryDesc -> Document
-dirDescToDoc fi = [
+dirDescToDoc :: DirectoryDesc -> Bool -> Document
+dirDescToDoc fi cls = [
       "name" =: (fName fi),
       "path" =: (fLocation fi),
       "server" =: (fileServer fi),
       "port" =: (port fi),
-      "localID" =: (dbID fi)
+      "localID" =: (dbID fi),
+      "primary" =: cls
   ]
 
 -- This converts a database document into a DirectoryDesc record
@@ -99,6 +100,13 @@ data FileSummary = FileSummary {
 
 instance ToJSON FileSummary
 
+data ResolveRequest = ResolveRequest {
+  requestId :: String,
+  prim :: Bool
+} deriving Generic
+
+instance FromJSON ResolveRequest
+instance ToJSON ResolveRequest
 
 drainCursor :: Cursor -> Action IO [Document]
 drainCursor cur = drainCursor' cur []
@@ -117,7 +125,7 @@ dirDescToSummary fi = FileSummary {fileId=fid, fullPath=p}
 
 type API = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] UpdateObject :> Put '[JSON] ApiResponse
-         :<|> "resolve" :> ReqBody '[JSON] String :> Post '[JSON] (Either ApiResponse DirectoryDesc)
+         :<|> "resolve" :> ReqBody '[JSON] ResolveRequest :> Post '[JSON] (Either ApiResponse DirectoryDesc)
          :<|> "list" :> Get '[JSON] [FileSummary]
          :<|> "add" :> ReqBody '[JSON] FileServer :> Post '[JSON] ApiResponse
          :<|> "getFs" :> Get '[JSON] FileServer

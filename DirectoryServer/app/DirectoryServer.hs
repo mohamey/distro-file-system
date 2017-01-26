@@ -14,6 +14,7 @@ import Lib
 
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
+import qualified Data.List as DL
 import qualified Data.Text as T
 import Database.MongoDB
 import Network.Wai.Handler.Warp
@@ -40,7 +41,7 @@ server = uploadFileIndexes
     uploadFileIndexes :: [DirectoryDesc] -> Handler ApiResponse
     uploadFileIndexes files = do
       -- Convert each index to document
-      let docs = map dirDescToDoc files
+      docs <- liftIO $ convertDocs files
       -- Insert each document into DB using insertAll
       liftIO $ withMongoDbConnection (insertAll_ "files" docs )
       -- Send back response
@@ -48,33 +49,60 @@ server = uploadFileIndexes
 
     updateFileIndex :: UpdateObject -> Handler ApiResponse
     updateFileIndex updateObj = do
-      let oldFileDoc = dirDescToDoc $ old updateObj
-      let newFileDoc = dirDescToDoc $ new updateObj
+      let oldFileDoc = dirDescToDoc (old updateObj) True
+      let newFileDoc = dirDescToDoc (new updateObj) True
 
       -- Replace the old file index with the new one
       liftIO $ withMongoDbConnection $ replace (select oldFileDoc "files") newFileDoc
 
+      -- TODO: Update the files in each of the respective file servers
+
       -- Send back response
       return ApiResponse {result=True, message="Successfully modified file"}
 
-    resolveFileID :: String -> Handler (Either ApiResponse DirectoryDesc)
-    resolveFileID fileID = do
+    resolveFileID :: ResolveRequest -> Handler (Either ApiResponse DirectoryDesc)
+    resolveFileID rr = do
       -- Build a query using file id
-      let objID = read fileID :: ObjectId
+      let objID = read (requestId rr) :: ObjectId
+      -- Resolve the file id
       let query = select ["_id" =: objID] "files"
       res <- liftIO $ withMongoDbConnection $ findOne query
       -- Send back either the file index or an api response
       case res of
-        Just fi -> return $ Right $ docToDirDesc "localID" fi
         Nothing -> return $ Left ApiResponse {result=False, message="File not found by ID"}
+        Just fi -> do
+          -- Read whether returned doc is primary or secondary
+          let docClass = read (show $ valueAt "primary" fi) :: Bool
+          if (prim rr) && (docClass == True)
+            then
+              return $ Right $ docToDirDesc "localID" fi
+            else case (prim rr) of
+              True -> do -- Retrieve the primary
+                let dd = docToDirDesc "localID" fi
+                let fileNme = fName dd
+                let filePth = init $ fLocation dd
+                liftIO $ putStrLn fileNme
+                liftIO $ putStrLn filePth
+                let newQuery = select ["name" =: fileNme, "path" =: filePth, "primary" =: True] "files"
+                rres <- liftIO $ withMongoDbConnection $ findOne newQuery
+                case rres of
+                  Nothing -> return $ Left ApiResponse {result=False, message="Primary File not found by ID"}
+                  Just f -> return $ Right $ docToDirDesc "localID" f
+              False -> do -- Just send back what we have
+                return $ Right $ docToDirDesc "localID" fi
 
     listFiles :: Handler [FileSummary]
     listFiles = do
-      -- Get all files listed in database
-      let query = select [] "files"
+      -- Get all secondary files listed in database
+      let primaryQuery = select ["primary"=:True] "files"
+      let secondaryQuery = select ["primary"=:False] "files"
       liftIO $ do
         withMongoDbConnection $ do
-          docs <- find query >>= drainCursor
+          primaryDocs <- find primaryQuery >>= drainCursor
+          secondaryDocs <- find secondaryQuery >>= drainCursor
+          -- This returns secondary file locations where available
+          let unionTest = (\x y -> ((show $ valueAt "name" x) == (show $ valueAt "name" y) && (show $ valueAt "path" x) == (show $ valueAt "path" y)))
+          let docs = DL.unionBy unionTest secondaryDocs primaryDocs
           let fileIndexes = map (docToDirDesc "_id") docs
           let fileSummaries = map dirDescToSummary fileIndexes
           return fileSummaries
@@ -98,7 +126,7 @@ server = uploadFileIndexes
     deleteDD :: DirectoryDesc -> Handler ApiResponse
     deleteDD dd = do
       -- Resolve file by ID
-        liftIO $ withMongoDbConnection $ deleteOne $ select (dirDescToDoc dd) "files"
+        liftIO $ withMongoDbConnection $ deleteOne $ select (dirDescToDoc dd True) "files"
         return ApiResponse{result=True, message="File deleted"}
 
 -- MongoDB Stuffs
@@ -110,6 +138,23 @@ withMongoDbConnection act = do
   ret <- runResourceT $ liftIO $ access pipe master (T.pack database) act
   close pipe
   return ret
+
+convertDocs :: [DirectoryDesc] -> IO [Document]
+convertDocs [] = return []
+convertDocs (x:xs) = do
+  converted <- convertToDoc x
+  convertedTail <- convertDocs xs
+  return (converted : convertedTail)
+
+-- Convert DirDesc to Document, but classify file as primary/secondary
+convertToDoc :: DirectoryDesc -> IO Document
+convertToDoc dd = do
+  res <- liftIO $ withMongoDbConnection $ findOne $ select ["name"=:(fName dd), "path"=:(fLocation dd)] "files"
+  case res of
+    Nothing -> return $ dirDescToDoc dd True
+    Just _ -> return $ dirDescToDoc dd False
+
+-- Take a list of docs, remove duplicates, use secondary files when available
 
 app :: Application
 app = serve api server
