@@ -34,6 +34,7 @@ api = Proxy
 server :: Int -> BaseUrl -> Server API
 server pn adr = uploadNewFile
               :<|> deleteFile
+              :<|> deleteSecondary
               :<|> updateFile
               :<|> closeFile
               :<|> openFile
@@ -52,6 +53,7 @@ server pn adr = uploadNewFile
       let actualPath = actualDirectory ++ "/" ++ (TL.unpack file)
       putStrLn actualPath
       let fileDoc = FileIndex {fileName=(TL.unpack file), fileLocation=directory}
+      -- TODO: Change this to database lookup
       fileExists <- doesFileExist actualPath
       case fileExists of
         True -> return ApiResponse {result=False, message="File already exists"}
@@ -87,6 +89,7 @@ server pn adr = uploadNewFile
     deleteFile :: ObjIdentifier -> Handler ApiResponse
     deleteFile specifiedFile = liftIO $ do
       -- Get the file name, specified path, and actual path
+      putStrLn "Function called to delete primary file copy"
       let dirParts = TL.splitOn "/" $ TL.pack (filePath specifiedFile)
       let specFileName = DL.last dirParts
       let dir = TL.intercalate "/" (DL.init dirParts)
@@ -105,6 +108,69 @@ server pn adr = uploadNewFile
               putStrLn $ "Specified file not found:\n" ++ show mongoDoc
               return ApiResponse{result=False, message="File not found"}
             Just doc -> do
+              -- Delete secondary copy of files
+              liftIO $ putStrLn "Getting secondary copies of file"
+              manager <- liftIO $ HPC.newManager HPC.defaultManagerSettings -- Get a HTTP manager
+              secondaries <- liftIO $ runClientM (getSecondariesReq (filePath specifiedFile)) (ClientEnv manager adr)
+              case secondaries of
+                Left err -> do
+                  liftIO $ putStrLn $ show err
+                  return ApiResponse {result=False, message="Fileserver failed to get a list of secondary file locations"}
+                Right eitherRes -> do
+                  case eitherRes of
+                    Left x -> return x
+                    Right dds -> do
+                      -- Delete the secondaries
+                      let addresses = map (\ x -> url (fileServer x) (port x)) dds
+                      -- Mass Delete fileservers
+                      putStrLn "Deleting Secondaries"
+                      putStrLn $ show $ addresses
+                      massRes <- liftIO $ massRunClient addresses (deleteFsReq specifiedFile) manager
+                      case massRes of
+                        Left err -> do
+                          liftIO $ putStrLn $ show err
+                          return ApiResponse {result=False, message="Failed to delete secondary copies of file"}
+                        Right False -> do
+                          return ApiResponse {result=False, message="Something went wrong deleting secondary copies of files. Try again later"}
+                        Right True -> do
+                          putStrLn "Deleting local primary copy"
+                          withMongoDbConnection (deleteOne $ select mongoDoc "files")
+                          -- Send delete request to directory server
+                          let dd = docToDirDesc "127.0.0.1" pn doc
+                          -- Send delete request to directory server
+                          response <- liftIO $ runClientM (deleteRequest dd) (ClientEnv manager adr)
+                          case response of
+                            Left err -> do
+                              putStrLn $ "An error occurred deleting the file listing from the directory server:\n" ++ show err
+                              return ApiResponse{result=False, message="An error occurred deleting file from directory server"}
+                            Right res -> do
+                              removeFile actualPath
+                              return res
+
+    deleteSecondary :: ObjIdentifier -> Handler ApiResponse
+    deleteSecondary specifiedFile = liftIO $ do
+  -- Get the file name, specified path, and actual path
+      putStrLn "Function called to delete local secondary copy of file"
+      let dirParts = TL.splitOn "/" $ TL.pack (filePath specifiedFile)
+      let specFileName = DL.last dirParts
+      let dir = TL.intercalate "/" (DL.init dirParts)
+      let directory = if (TL.head dir) == '/' then "static-files" ++ (TL.unpack dir) else "static-files/" ++ (TL.unpack dir)
+      let actualPath = directory ++ "/" ++ TL.unpack specFileName
+      -- Create fileobject for mongodb
+      let fi = FileIndex {fileName=(TL.unpack specFileName), fileLocation=(TL.unpack dir)}
+      let mongoDoc = fileIndexToDoc fi
+      fileExists <- doesFileExist actualPath
+      putStrLn "Deleting secondary"
+      case fileExists of
+        False -> do return ApiResponse {result=False, message="File not found on fileserver"}
+        True -> do
+          liftIO $ putStrLn "Local copy of secondary file found"
+          maybeDoc <- withMongoDbConnection (findOne $ select mongoDoc "files")
+          case maybeDoc of
+            Nothing -> do
+              putStrLn $ "Specified file not found:\n" ++ show mongoDoc
+              return ApiResponse{result=False, message="File not found"}
+            Just doc -> do
               withMongoDbConnection (deleteOne $ select mongoDoc "files")
               -- Send delete request to directory server
               let dd = docToDirDesc "127.0.0.1" pn doc
@@ -116,6 +182,7 @@ server pn adr = uploadNewFile
                   putStrLn $ "An error occurred deleting the file listing from the directory server:\n" ++ show err
                   return ApiResponse{result=False, message="An error occurred deleting file from directory server"}
                 Right res -> do
+                  liftIO $ putStrLn "Local secondary removed"
                   removeFile actualPath
                   return res
 
@@ -250,7 +317,10 @@ url s p = BaseUrl Http s p ""
 massRunClient :: [BaseUrl] -> ClientM a -> HPC.Manager -> IO (Either ServantError Bool)
 massRunClient [] _ _ = return $ Right True
 massRunClient (x:xs) action manager = do
-  _ <- runClientM action (ClientEnv manager x)
+  res <- runClientM action (ClientEnv manager x)
+  case res of
+    Left err -> do putStrLn $ show err
+    Right _ -> putStrLn "Success removing remote secondary"
   massRunClient xs action manager
 
 ------------------------------------------ Directory Server Client ------------------------------------------
@@ -289,14 +359,20 @@ getSecondariesReq s = do
 
 --------------------------- FileServer Client API ---------------------------------
 updateFS :: FileObject -> ClientM ApiResponse
+deleteFS :: ObjIdentifier -> ClientM ApiResponse
 
 fsapi :: DP.Proxy FSAPI
 fsapi = DP.Proxy
 
-updateFS = client fsapi
+updateFS :<|> deleteFS = client fsapi
 
 -- Queries to be performed
 updateFsReq :: FileObject -> ClientM ApiResponse
 updateFsReq fo = do
   res <- updateFS fo
+  return res
+
+deleteFsReq :: ObjIdentifier -> ClientM ApiResponse
+deleteFsReq oi = do
+  res <- deleteFS oi
   return res

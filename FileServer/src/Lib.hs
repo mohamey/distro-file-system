@@ -154,6 +154,7 @@ instance FromJSON FileServer
 -- The API Definition
 type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "remove" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
+         :<|> "removeSec" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
          :<|> "close" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
          :<|> "open" :> QueryParam "path" String :> Get '[JSON] (Either ApiResponse FileObject)
@@ -161,6 +162,7 @@ type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "list" :> Get '[JSON] [ObjIdentifier]
 
 type FSAPI = "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
+         :<|> "removeSec" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
 
 type DSAPI = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] UpdateObject :> Put '[JSON] ApiResponse
