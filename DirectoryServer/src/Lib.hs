@@ -130,3 +130,4 @@ type API = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiResponse
          :<|> "add" :> ReqBody '[JSON] FileServer :> Post '[JSON] ApiResponse
          :<|> "getFs" :> Get '[JSON] FileServer
          :<|> "delete" :> ReqBody '[JSON] DirectoryDesc :> Delete '[JSON] ApiResponse
+         :<|> "getSecondaries" :> QueryParam "path" String :> Get '[JSON] (Either ApiResponse [DirectoryDesc])

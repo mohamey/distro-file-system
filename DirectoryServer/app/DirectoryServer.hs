@@ -35,6 +35,7 @@ server = uploadFileIndexes
     :<|> addFS
     :<|> getFS
     :<|> deleteDD
+    :<|> getSecondaries
 
   where
     -- Upload new file indexes to directory server
@@ -128,6 +129,18 @@ server = uploadFileIndexes
       -- Resolve file by ID
         liftIO $ withMongoDbConnection $ deleteOne $ select (dirDescToDoc dd True) "files"
         return ApiResponse{result=True, message="File deleted"}
+
+    getSecondaries :: Maybe String -> Handler (Either ApiResponse [DirectoryDesc])
+    getSecondaries Nothing = return $ Left ApiResponse {result=False, message="No path provided"}
+    getSecondaries (Just p) = do
+      let parts = T.splitOn "/" (T.pack p)
+      let name = last parts
+      let path = T.intercalate "/" (init parts)
+      liftIO $ putStrLn $ T.unpack path
+      let query = select ["name" =: name, "path" =: path, "primary"=:False] "files"
+      docs <- liftIO $ withMongoDbConnection $ find query >>= drainCursor
+      let dds = map (docToDirDesc "localID") docs
+      return $ Right dds
 
 -- MongoDB Stuffs
 withMongoDbConnection :: Action IO a -> IO a
