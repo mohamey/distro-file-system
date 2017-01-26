@@ -66,7 +66,7 @@ deleteRequest fpath = do
 
 ------------------------------- Directory Server API ------------------------------------------
 
-dresolve :: String -> ClientM (Either ApiResponse DirectoryDesc)
+dresolve :: ResolveRequest -> ClientM (Either ApiResponse DirectoryDesc)
 dlist :: ClientM [FileSummary]
 dgetFs :: ClientM FileServer
 
@@ -75,9 +75,9 @@ dsapi = DP.Proxy
 
 dresolve :<|> dlist :<|> dgetFs = client dsapi
 
-dResolveRequest :: String -> ClientM (Either ApiResponse DirectoryDesc)
-dResolveRequest idString = do
-  res <- dresolve idString
+dResolveRequest :: ResolveRequest -> ClientM (Either ApiResponse DirectoryDesc)
+dResolveRequest rr = do
+  res <- dresolve rr
   return res
 
 listRequest :: ClientM [FileSummary]
@@ -97,7 +97,8 @@ parseCommand "get" (p:_) adr env = do
   case Map.lookup p env of -- Find object id of requested file
     Just fileIdString -> do
       -- Query Directory server for file using it's id
-      res <- runClientM (dResolveRequest fileIdString) (ClientEnv manager adr)
+      let rr = ResolveRequest {requestId=fileIdString, prim=False}
+      res <- runClientM (dResolveRequest rr) (ClientEnv manager adr)
       case res of
         Left err -> do
           putStrLn $ "Error: " ++ show err
@@ -149,6 +150,7 @@ parseCommand "post" (f:_) adr env = liftIO $ do
         putStrLn "File not found"
         prompt env adr
 
+-- TODO: Figure out uses for this method, and update to use primary copies
 parseCommand "put" (f:_) adr env = liftIO $ do
   manager <- HPC.newManager HPC.defaultManagerSettings
   doesFileExist f >>=
@@ -179,7 +181,8 @@ parseCommand "delete" (fp:_) adr env = liftIO $ do
       prompt env adr
     Just fileIdString -> do
       -- Query Directory server for file using it's id
-      res <- runClientM (dResolveRequest fileIdString) (ClientEnv manager adr)
+      let rr = ResolveRequest {requestId=fileIdString, prim=True}
+      res <- runClientM (dResolveRequest rr) (ClientEnv manager adr)
       case res of
         Left err -> do
           putStrLn $ "Failed to resolve file path: \n" ++ (show err)
@@ -209,7 +212,8 @@ parseCommand "open" (p:_) adr env = do
       prompt env adr
     Just fileIdString -> do
       -- Query Directory server for file using it's id
-      res <- runClientM (dResolveRequest fileIdString) (ClientEnv manager adr)
+      let rr = ResolveRequest {requestId=fileIdString, prim=True}
+      res <- runClientM (dResolveRequest rr) (ClientEnv manager adr)
       case res of
         Left err -> do
           putStrLn $ "Error: " ++ show err

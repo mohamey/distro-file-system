@@ -100,6 +100,14 @@ data FileServer = FileServer {
 instance FromJSON FileServer
 instance ToJSON FileServer
 
+data ResolveRequest = ResolveRequest {
+  requestId :: String,
+  prim :: Bool
+} deriving Generic
+
+instance FromJSON ResolveRequest
+instance ToJSON ResolveRequest
+
 -- The API Definition
 type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "remove" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
@@ -109,6 +117,6 @@ type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "files" :> QueryParam "path" String :> Get '[JSON] FileObject
          :<|> "list" :> Get '[JSON] [ObjIdentifier]
 
-type DSAPI ="resolve" :> ReqBody '[JSON] String :> Post '[JSON] (Either ApiResponse DirectoryDesc)
+type DSAPI ="resolve" :> ReqBody '[JSON] ResolveRequest :> Post '[JSON] (Either ApiResponse DirectoryDesc)
          :<|> "list" :> Get '[JSON] [FileSummary]
          :<|> "getFs" :> Get '[JSON] FileServer
