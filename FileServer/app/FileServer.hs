@@ -150,9 +150,31 @@ server pn adr = uploadNewFile
     closeFile fObject = do
       -- Remove the file listing from the database of opened files
       liftIO $ putStrLn (path fObject)
-      liftIO $ withMongoDbConnection (deleteOne $ select ["path" =: (path fObject)] "openFiles")
-      -- Call update function with file object
-      updateFile fObject
+      -- Get a list of secondary copies of the file
+      manager <- liftIO $ HPC.newManager HPC.defaultManagerSettings -- Get a HTTP manager
+      secondaries <- liftIO $ runClientM (getSecondariesReq (path fObject)) (ClientEnv manager adr)
+      case secondaries of
+        Left err -> do
+          liftIO $ putStrLn $ show err
+          return ApiResponse {result=False, message="Fileserver failed to get a list of secondary file locations"}
+        Right eitherRes -> do
+          case eitherRes of
+            Left x -> return x
+            Right dds -> do
+              -- Update the secondaries
+              let addresses = map (\ x -> url (fileServer x) (port x)) dds
+              -- Mass update fileservers
+              massRes <- liftIO $ massRunClient addresses (updateFsReq fObject) manager
+              case massRes of
+                Left err -> do
+                  liftIO $ putStrLn $ show err
+                  return ApiResponse {result=False, message="Error updating secondary copies"}
+                Right False -> do
+                  return ApiResponse {result=False, message="Failed to update secondary copies"}
+                Right True -> do
+                  -- Call update function with file object
+                  liftIO $ withMongoDbConnection (deleteOne $ select ["path" =: (path fObject)] "openFiles")
+                  updateFile fObject
 
     openFile :: Maybe String -> Handler (Either ApiResponse FileObject)
     openFile mp = do
@@ -224,15 +246,25 @@ withMongoDbConnection act = do
 url :: String -> Int -> BaseUrl
 url s p = BaseUrl Http s p ""
 
+-- Takes object, list of addresses, client action
+massRunClient :: [BaseUrl] -> ClientM a -> HPC.Manager -> IO (Either ServantError Bool)
+massRunClient [] _ _ = return $ Right True
+massRunClient (x:xs) action manager = do
+  _ <- runClientM action (ClientEnv manager x)
+  massRunClient xs action manager
+
+------------------------------------------ Directory Server Client ------------------------------------------
+
 upload :: [DirectoryDesc] -> ClientM ApiResponse
 update :: UpdateObject -> ClientM ApiResponse
 add :: FileServer -> ClientM ApiResponse
 deleteDD :: DirectoryDesc -> ClientM ApiResponse
+getSecondaries :: Maybe String -> ClientM (Either ApiResponse [DirectoryDesc])
 
 dsapi :: DP.Proxy DSAPI
 dsapi = DP.Proxy
 
-upload :<|> update :<|> add :<|> deleteDD = client dsapi
+upload :<|> update :<|> add :<|> deleteDD :<|> getSecondaries = client dsapi
 
 postRequest :: [DirectoryDesc] -> ClientM ApiResponse
 postRequest postList = do
@@ -247,4 +279,24 @@ addRequest fs = do
 deleteRequest :: DirectoryDesc -> ClientM ApiResponse
 deleteRequest dd = do
   res <- deleteDD dd
+  return res
+
+getSecondariesReq :: String -> ClientM (Either ApiResponse [DirectoryDesc])
+getSecondariesReq s = do
+  res <- getSecondaries (Just s)
+  return res
+
+
+--------------------------- FileServer Client API ---------------------------------
+updateFS :: FileObject -> ClientM ApiResponse
+
+fsapi :: DP.Proxy FSAPI
+fsapi = DP.Proxy
+
+updateFS = client fsapi
+
+-- Queries to be performed
+updateFsReq :: FileObject -> ClientM ApiResponse
+updateFsReq fo = do
+  res <- updateFS fo
   return res

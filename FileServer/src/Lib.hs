@@ -160,7 +160,10 @@ type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "files" :> QueryParam "path" String :> Get '[JSON] FileObject
          :<|> "list" :> Get '[JSON] [ObjIdentifier]
 
+type FSAPI = "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
+
 type DSAPI = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] UpdateObject :> Put '[JSON] ApiResponse
          :<|> "add" :> ReqBody '[JSON] FileServer :> Post '[JSON] ApiResponse
          :<|> "delete" :> ReqBody '[JSON] DirectoryDesc :> Delete '[JSON] ApiResponse
+         :<|> "getSecondaries" :> QueryParam "path" String :> Get '[JSON] (Either ApiResponse [DirectoryDesc])
