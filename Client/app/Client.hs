@@ -127,28 +127,34 @@ parseCommand "post" (f:_) adr env = liftIO $ do
   manager <- HPC.newManager HPC.defaultManagerSettings
   fileExists <- doesFileExist f
   case fileExists of
-    True -> do
-      -- Get File Server to send to
-      response <- runClientM getFileServer (ClientEnv manager adr)
-      case response of
-        Left err -> do
-          putStrLn $ "Error requesting file server for POST: \n" ++ show err
-          prompt env adr
-        Right fs -> do
-          let serverAddress = address fs
-          let serverPort = portNum fs
-          fileContents <- TLIO.readFile f
-          res <- runClientM (postRequest (FileObject f fileContents)) (ClientEnv manager (url serverAddress serverPort))
-          case res of
-            Left err -> do
-              putStrLn $ "Error posting file to fileserver\n" ++ show err
-              prompt env adr
-            Right rresponse -> do
-              putStrLn $ "Response from fileserver: \n" ++ show (message rresponse)
-              prompt env adr
     False -> do
         putStrLn "File not found"
         prompt env adr
+    True -> do
+      -- Resolve file path to make sure file doesn't exist
+      case Map.lookup ("/" ++ f) env of
+        Just _ -> do
+          putStrLn "File already exists, use put command to update it"
+          prompt env adr
+        Nothing -> do
+          -- Get File Server to send to
+          response <- runClientM getFileServer (ClientEnv manager adr)
+          case response of
+            Left err -> do
+              putStrLn $ "Error requesting file server for POST: \n" ++ show err
+              prompt env adr
+            Right fs -> do
+              let serverAddress = address fs
+              let serverPort = portNum fs
+              fileContents <- TLIO.readFile f
+              res <- runClientM (postRequest (FileObject f fileContents)) (ClientEnv manager (url serverAddress serverPort))
+              case res of
+                Left err -> do
+                  putStrLn $ "Error posting file to fileserver\n" ++ show err
+                  prompt env adr
+                Right rresponse -> do
+                  putStrLn $ "Response from fileserver: \n" ++ show (message rresponse)
+                  prompt env adr
 
 -- TODO: Figure out uses for this method, and update to use primary copies
 parseCommand "put" (f:_) adr env = liftIO $ do
