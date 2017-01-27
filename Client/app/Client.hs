@@ -158,28 +158,28 @@ parseCommand "post" (f:_) adr env = liftIO $ do
                   putStrLn $ greenCode ++ "Response from fileserver: \n" ++ resetCode ++ show (message rresponse)
                   prompt env adr
 
--- TODO: Figure out uses for this method, and update to use primary copies
 parseCommand "put" (f:_) adr env = liftIO $ do
   manager <- HPC.newManager HPC.defaultManagerSettings
-  doesFileExist f >>=
-    (\res -> if res then
-        TLIO.readFile f >>=
-          (\fileText -> runClientM (putRequest (FileObject f fileText)) (ClientEnv manager adr) >>=
-            (\response -> case response of
-                Left err -> do
-                  putStrLn $ redCode ++ "Error: " ++ show err
-                  prompt env adr
-                Right apiRes -> do
-                  case (result apiRes) of
-                    False -> do
-                      putStrLn $ redCode ++ "Put failed: " ++ (message apiRes)
-                      prompt env adr
-                    True -> do
-                      putStrLn $ greenCode ++ "Put Successful: " ++ resetCode ++ message(apiRes)
-                      prompt env adr))
-   else do
-        putStrLn "File not found"
-        prompt env adr)
+  fileExists <- doesFileExist f
+  case fileExists of
+    False -> do
+      putStrLn $ redCode ++ "File not found"
+      prompt env adr
+    True -> do
+      fileText <- TLIO.readFile f
+      response <- runClientM (putRequest (FileObject f fileText)) (ClientEnv manager adr)
+      case response of
+          Left err -> do
+            putStrLn $ redCode ++ "Error: " ++ show err
+            prompt env adr
+          Right apiRes -> do
+            case (result apiRes) of
+              False -> do
+                putStrLn $ redCode ++ "Put failed: " ++ (message apiRes)
+                prompt env adr
+              True -> do
+                putStrLn $ greenCode ++ "Put Successful: " ++ resetCode ++ message(apiRes)
+                prompt env adr
 
 parseCommand "delete" (fp:_) adr env = liftIO $ do
   manager <- HPC.newManager HPC.defaultManagerSettings
