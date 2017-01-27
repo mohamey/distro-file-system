@@ -53,11 +53,12 @@ server pn adr = uploadNewFile
       let actualPath = actualDirectory ++ "/" ++ (TL.unpack file)
       putStrLn actualPath
       let fileDoc = FileIndex {fileName=(TL.unpack file), fileLocation=directory}
-      -- TODO: Change this to database lookup
       fileExists <- doesFileExist actualPath
-      case fileExists of
-        True -> return ApiResponse {result=False, message="File already exists"}
-        False -> do
+      docExists <- withMongoDbConnection $ findOne $ select ["name"=:TL.toStrict file, "path"=:directory] "files"
+      -- Only if the file is not present in the file system and there is no database listing
+      case (fileExists == False) && (docExists == Nothing) of
+        False -> return ApiResponse {result=False, message="File already exists"}
+        True -> do
             createDirectoryIfMissing True actualDirectory -- Creates parent directories too
             TLIO.writeFile actualPath (fileContent newFile)
             -- Write new file to the database
