@@ -106,7 +106,8 @@ server = uploadFileIndexes
           let docs = DL.unionBy unionTest secondaryDocs primaryDocs
           let fileIndexes = map (docToDirDesc "_id") docs
           let fileSummaries = map dirDescToSummary fileIndexes
-          return fileSummaries
+          -- Remove duplicate paths before sending it back
+          return $ DL.nubBy (\ x y -> (fullPath x) == (fullPath y) )fileSummaries
 
     addFS :: FileServer -> Handler ApiResponse
     addFS fs = do
