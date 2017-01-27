@@ -29,8 +29,6 @@ This requires a mongodb database be running before the directory server can be r
 stack exec DirectoryServer portNo
 ```
 
-Please note, for now you need to make sure the mongodb database "DIRECTORYDB" is totally empty before running on the Directory Server. If you don't this will cause conflicts in registering new file systems in the Directory Server database.
-
 ### File Server
 This also requires a mongodb database to keep track of files present on the fileserver. The Fileserver is run as follows:
 ```
@@ -80,5 +78,4 @@ Please note, when running the system there will be problems deleting replicated 
 
 ## TODO
 * Coloured Terminal Prompts
-* Auto retrieve list of files on the client
 * Remove duplicates from list of files on the client
