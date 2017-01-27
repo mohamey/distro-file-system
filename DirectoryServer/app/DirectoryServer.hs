@@ -176,5 +176,8 @@ app = serve api server
 
 runServer :: Int -> IO ()
 runServer portNo = do
+  -- Clear out the database
+  withMongoDbConnection $ delete $ select [] "fileservers"
+  withMongoDbConnection $ delete $ select [] "files"
   liftIO $ putStrLn $ "Server running on 127.0.0.1:" ++ (show portNo)
   run portNo app
