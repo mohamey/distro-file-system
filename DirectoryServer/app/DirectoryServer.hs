@@ -56,8 +56,6 @@ server = uploadFileIndexes
       -- Replace the old file index with the new one
       liftIO $ withMongoDbConnection $ replace (select oldFileDoc "files") newFileDoc
 
-      -- TODO: Update the files in each of the respective file servers
-
       -- Send back response
       return ApiResponse {result=True, message="Successfully modified file"}
 
