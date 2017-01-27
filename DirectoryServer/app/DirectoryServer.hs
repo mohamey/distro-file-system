@@ -162,7 +162,9 @@ convertDocs (x:xs) = do
 -- Convert DirDesc to Document, but classify file as primary/secondary
 convertToDoc :: DirectoryDesc -> IO Document
 convertToDoc dd = do
-  res <- liftIO $ withMongoDbConnection $ findOne $ select ["name"=:(fName dd), "path"=:(fLocation dd)] "files"
+  let fNme = T.pack $ fName dd
+  let fPth = T.pack $ fLocation dd
+  res <- liftIO $ withMongoDbConnection $ findOne $ select ["name"=:fNme, "path"=:fPth] "files"
   case res of
     Nothing -> return $ dirDescToDoc dd True
     Just _ -> return $ dirDescToDoc dd False
