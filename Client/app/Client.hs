@@ -289,7 +289,21 @@ parseCommand _ _ adr e = putStrLn "Command unrecognized" >> prompt e adr
 
 run :: String -> Int -> IO ()
 run dirServerAddress dirServerPort = do
-  prompt Map.empty (url dirServerAddress dirServerPort)
+  manager <- HPC.newManager HPC.defaultManagerSettings
+  let adr = url dirServerAddress dirServerPort
+  res <- runClientM listRequest (ClientEnv manager adr)
+  case res of
+    Left err -> do
+      putStrLn $ "Error: " ++ show err
+      prompt Map.empty adr
+    Right summaries -> do
+      let values = map fileId summaries
+      let keys = map fullPath summaries
+      let zippedList = zip keys values
+      let newEnv = Map.fromList zippedList
+      putStrLn "Available Files:"
+      mapM_ print keys
+      prompt newEnv (url dirServerAddress dirServerPort)
 
 prompt :: Env -> BaseUrl -> IO ()
 prompt env burl = do
