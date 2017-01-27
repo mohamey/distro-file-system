@@ -164,17 +164,15 @@ server pn adr = uploadNewFile
       case fileExists of
         False -> do return ApiResponse {result=False, message="File not found on fileserver"}
         True -> do
-          liftIO $ putStrLn "Local copy of secondary file found"
           maybeDoc <- withMongoDbConnection (findOne $ select mongoDoc "files")
           case maybeDoc of
             Nothing -> do
-              putStrLn $ "Specified file not found:\n" ++ show mongoDoc
+              putStrLn $ "Specified document not found:\n" ++ show mongoDoc
               return ApiResponse{result=False, message="File not found"}
             Just doc -> do
-              withMongoDbConnection (deleteOne $ select mongoDoc "files")
               -- Send delete request to directory server
               let dd = docToDirDesc "127.0.0.1" pn doc
-              -- Send delete request to directory server
+              putStrLn "Sending delete request to directory server"
               manager <- liftIO $ HPC.newManager HPC.defaultManagerSettings -- Get a HTTP manager
               response <- liftIO $ runClientM (deleteRequest dd) (ClientEnv manager adr)
               case response of
@@ -182,6 +180,8 @@ server pn adr = uploadNewFile
                   putStrLn $ "An error occurred deleting the file listing from the directory server:\n" ++ show err
                   return ApiResponse{result=False, message="An error occurred deleting file from directory server"}
                 Right res -> do
+                  liftIO $ putStrLn "Local copy of secondary file found"
+                  withMongoDbConnection (deleteOne $ select mongoDoc "files")
                   liftIO $ putStrLn "Local secondary removed"
                   removeFile actualPath
                   return res
