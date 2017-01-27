@@ -19,6 +19,7 @@ import GHC.Generics
 import Prelude ()
 import Prelude.Compat as PC
 import Servant
+import System.Console.ANSI
 
 -- A representation of files on the server
 -- This will be stored in the mongodb database
@@ -120,3 +121,11 @@ type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
 type DSAPI ="resolve" :> ReqBody '[JSON] ResolveRequest :> Post '[JSON] (Either ApiResponse DirectoryDesc)
          :<|> "list" :> Get '[JSON] [FileSummary]
          :<|> "getFs" :> Get '[JSON] FileServer
+
+
+-- Colorful output!
+redCode   = setSGRCode [SetConsoleIntensity BoldIntensity , SetColor Foreground Vivid Red]
+whiteCode = setSGRCode [SetConsoleIntensity BoldIntensity , SetColor Foreground Vivid White]
+blueCode  = setSGRCode [SetConsoleIntensity BoldIntensity , SetColor Foreground Vivid Blue]
+greenCode  = setSGRCode [SetConsoleIntensity BoldIntensity , SetColor Foreground Vivid Green]
+resetCode = setSGRCode [Reset]

@@ -95,53 +95,55 @@ parseCommand :: String -> [String] -> BaseUrl -> Env -> IO ()
 parseCommand "get" (p:_) adr env = do
   manager <- HPC.newManager HPC.defaultManagerSettings
   case Map.lookup p env of -- Find object id of requested file
+    Nothing -> do
+      putStrLn $ redCode ++ "Could not resolve file path locally"
+      prompt env adr
     Just fileIdString -> do
       -- Query Directory server for file using it's id
       let rr = ResolveRequest {requestId=fileIdString, prim=False}
       res <- runClientM (dResolveRequest rr) (ClientEnv manager adr)
       case res of
         Left err -> do
-          putStrLn $ "Error: " ++ show err
+          putStrLn $ redCode ++ "Error: " ++ show err
           prompt env adr
         -- Check the directory server response
         Right dsResponse -> do
           case dsResponse of
             Left x -> do
-              putStrLn (message x)
+              putStrLn $ redCode ++ "Error: " ++ (message x)
               prompt env adr
             Right dd -> do
               -- Query the returned file server for the file
               rres <- runClientM (getRequest (fLocation dd ++ "/" ++ fName dd)) (ClientEnv manager (url (fileServer dd) (port dd)))
               case rres of
                 Left err -> do
-                  putStrLn $ "Error retrieving file from file server:\n" ++ show err
+                  putStrLn $ redCode ++  "Error retrieving file from file server:\n" ++ show err
                   prompt env adr
                 Right x -> do
+                  putStrLn $ greenCode ++ "File Retrieved: " ++ resetCode
                   putStrLn (show $ fileContent x)
+                  writeFile (path x) (TL.unpack $ fileContent x)
                   prompt env adr
-    Nothing -> do
-      putStrLn "Could not resolve file path locally"
-      prompt env adr
 
 parseCommand "post" (f:_) adr env = liftIO $ do
   manager <- HPC.newManager HPC.defaultManagerSettings
   fileExists <- doesFileExist f
   case fileExists of
     False -> do
-        putStrLn "File not found"
+        putStrLn $ redCode ++ "File not found"
         prompt env adr
     True -> do
       -- Resolve file path to make sure file doesn't exist
       case Map.lookup ("/" ++ f) env of
         Just _ -> do
-          putStrLn "File already exists, use put command to update it"
+          putStrLn $ blueCode ++ "File already exists, use put command to update it"
           prompt env adr
         Nothing -> do
           -- Get File Server to send to
           response <- runClientM getFileServer (ClientEnv manager adr)
           case response of
             Left err -> do
-              putStrLn $ "Error requesting file server for POST: \n" ++ show err
+              putStrLn $ redCode ++ "Error requesting file server for POST: \n" ++ show err
               prompt env adr
             Right fs -> do
               let serverAddress = address fs
@@ -150,10 +152,10 @@ parseCommand "post" (f:_) adr env = liftIO $ do
               res <- runClientM (postRequest (FileObject f fileContents)) (ClientEnv manager (url serverAddress serverPort))
               case res of
                 Left err -> do
-                  putStrLn $ "Error posting file to fileserver\n" ++ show err
+                  putStrLn $ redCode ++ "Error posting file to fileserver\n" ++ show err
                   prompt env adr
                 Right rresponse -> do
-                  putStrLn $ "Response from fileserver: \n" ++ show (message rresponse)
+                  putStrLn $ greenCode ++ "Response from fileserver: \n" ++ resetCode ++ show (message rresponse)
                   prompt env adr
 
 -- TODO: Figure out uses for this method, and update to use primary copies
@@ -165,15 +167,15 @@ parseCommand "put" (f:_) adr env = liftIO $ do
           (\fileText -> runClientM (putRequest (FileObject f fileText)) (ClientEnv manager adr) >>=
             (\response -> case response of
                 Left err -> do
-                  putStrLn $ "Error: " ++ show err
+                  putStrLn $ redCode ++ "Error: " ++ show err
                   prompt env adr
                 Right apiRes -> do
                   case (result apiRes) of
                     False -> do
-                      putStrLn $ "Put failed: " ++ (message apiRes)
+                      putStrLn $ redCode ++ "Put failed: " ++ (message apiRes)
                       prompt env adr
                     True -> do
-                      putStrLn $ "Put Successful: " ++ message(apiRes)
+                      putStrLn $ greenCode ++ "Put Successful: " ++ resetCode ++ message(apiRes)
                       prompt env adr))
    else do
         putStrLn "File not found"
@@ -183,7 +185,7 @@ parseCommand "delete" (fp:_) adr env = liftIO $ do
   manager <- HPC.newManager HPC.defaultManagerSettings
   case Map.lookup fp env of -- Find object id of requested file
     Nothing -> do
-      putStrLn "File path did not resolve locally"
+      putStrLn $ redCode ++ "File path did not resolve locally"
       prompt env adr
     Just fileIdString -> do
       -- Query Directory server for file using it's id
@@ -191,12 +193,12 @@ parseCommand "delete" (fp:_) adr env = liftIO $ do
       res <- runClientM (dResolveRequest rr) (ClientEnv manager adr)
       case res of
         Left err -> do
-          putStrLn $ "Failed to resolve file path: \n" ++ (show err)
+          putStrLn $ redCode ++ "Failed to resolve file path: \n" ++ (show err)
           prompt env adr
         Right response -> do
           case response of
             Left apiRes -> do
-              putStrLn $ "Error resolving file on directory server:\n" ++ (message apiRes)
+              putStrLn $ redCode ++ "Error resolving file on directory server:\n" ++ (message apiRes)
               prompt env adr
             Right dd -> do
               -- Using file path and dd details, send delete request
@@ -204,7 +206,7 @@ parseCommand "delete" (fp:_) adr env = liftIO $ do
               rres <- runClientM (deleteRequest objId) (ClientEnv manager (url (fileServer dd) (port dd)))
               case rres of
                 Left error -> do
-                  putStrLn $ "Servant error: \n" ++ show error
+                  putStrLn $ redCode ++ "Servant error: \n" ++ show error
                   prompt env adr
                 Right deleteResponse -> do
                   putStrLn (message deleteResponse)
@@ -214,7 +216,7 @@ parseCommand "open" (p:_) adr env = do
   manager <- HPC.newManager HPC.defaultManagerSettings
   case Map.lookup p env of -- Find object id of requested file
     Nothing -> do
-      putStrLn "Could not resolve file path locally"
+      putStrLn $ redCode ++ "Could not resolve file path locally"
       prompt env adr
     Just fileIdString -> do
       -- Query Directory server for file using it's id
@@ -222,13 +224,13 @@ parseCommand "open" (p:_) adr env = do
       res <- runClientM (dResolveRequest rr) (ClientEnv manager adr)
       case res of
         Left err -> do
-          putStrLn $ "Error: " ++ show err
+          putStrLn $ redCode ++ "Error: " ++ show err
           prompt env adr
         -- Check the directory server response
         Right dsResponse -> do
           case dsResponse of
             Left x -> do
-              putStrLn (message x)
+              putStrLn $ redCode ++ "Error: " ++ (message x)
               prompt env adr
             Right dd -> do
               -- Query the returned file server for the file
@@ -236,12 +238,12 @@ parseCommand "open" (p:_) adr env = do
               rres <- runClientM (openRequest (fLocation dd ++ fName dd)) (ClientEnv manager fsUrl)
               case rres of
                 Left err -> do
-                  putStrLn $ "Error retrieving file from file server:\n" ++ show err
+                  putStrLn $ redCode ++ "Error retrieving file from file server:\n" ++ show err
                   prompt env adr
                 Right eitherRes -> do
                   case eitherRes of
                     Left y -> do
-                      putStrLn $ "Could not retrieve file from fileserver\n" ++ show (message y)
+                      putStrLn $ redCode ++ "Could not retrieve file from fileserver\n" ++ show (message y)
                       prompt env adr
                     Right x -> do
                       -- Write the received file locally
@@ -258,16 +260,16 @@ parseCommand "open" (p:_) adr env = do
                       updateRes <- runClientM (closeRequest fObject) (ClientEnv manager fsUrl)
                       case updateRes of
                         Left err -> do
-                          putStrLn $ "Servant error uploading updated file\n" ++ show err
+                          putStrLn $ redCode ++ "Servant error uploading updated file\n" ++ show err
                           prompt env adr
                         Right resres -> do
                           case result resres of
                             True -> do
                               removeFile tempPath
-                              putStrLn "Successfully updated file"
+                              putStrLn $ greenCode ++ "Successfully updated file"
                               prompt env adr
                             False -> do
-                              putStrLn "Failed to upload updated file"
+                              putStrLn $ redCode ++ "Failed to upload updated file"
                               prompt env adr
 
 parseCommand "list" _  adr env = liftIO $ do
@@ -275,39 +277,29 @@ parseCommand "list" _  adr env = liftIO $ do
   res <- runClientM listRequest (ClientEnv manager adr)
   case res of
     Left err -> do
-      putStrLn $ "Error: " ++ show err
+      putStrLn $ redCode ++ "Error: " ++ show err
       prompt env adr
     Right summaries -> do
       let values = map fileId summaries
       let keys = map fullPath summaries
       let zippedList = zip keys values
       let newEnv = Map.fromList zippedList
-      mapM_ print keys
+      putStrLn $ greenCode ++ "Available Files:"
+      mapM_ (\x -> putStrLn $ whiteCode ++ x) keys
       prompt newEnv adr
 
-parseCommand _ _ adr e = putStrLn "Command unrecognized" >> prompt e adr
+parseCommand _ _ adr e = do
+  putStrLn $ redCode ++ "Command unrecognized"
+  prompt e adr
 
 run :: String -> Int -> IO ()
 run dirServerAddress dirServerPort = do
-  manager <- HPC.newManager HPC.defaultManagerSettings
   let adr = url dirServerAddress dirServerPort
-  res <- runClientM listRequest (ClientEnv manager adr)
-  case res of
-    Left err -> do
-      putStrLn $ "Error: " ++ show err
-      prompt Map.empty adr
-    Right summaries -> do
-      let values = map fileId summaries
-      let keys = map fullPath summaries
-      let zippedList = zip keys values
-      let newEnv = Map.fromList zippedList
-      putStrLn "Available Files:"
-      mapM_ print keys
-      prompt newEnv (url dirServerAddress dirServerPort)
+  parseCommand "list" [] adr Map.empty
 
 prompt :: Env -> BaseUrl -> IO ()
 prompt env burl = do
-  putStrLn "Please enter a command:"
+  putStrLn $ whiteCode ++ "Please enter a command:"
   command <- getLine
   let commandParts = words command
   parseCommand (head commandParts) (tail commandParts) burl env
