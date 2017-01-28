@@ -24,6 +24,7 @@ library
                      , mongoDB
                      , servant-server
                      , text
+                     , time >= 1.6
                      , wai
                      , warp
   default-language:    Haskell2010
@@ -44,6 +45,7 @@ executable client
                      , servant
                      , servant-client
                      , text
+                     , time >= 1.6
                      , transformers
   default-language:    Haskell2010
 

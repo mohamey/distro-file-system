@@ -12,6 +12,7 @@ module Lib where
 
 import Data.Aeson
 import Data.Bson
+import Data.Time.Clock
 import Data.Text as T
 import Database.MongoDB
 import qualified Data.Text.Lazy as TL
@@ -25,7 +26,8 @@ import System.Console.ANSI
 -- This will be stored in the mongodb database
 data FileObject = FileObject {
   path :: String,
-  fileContent :: TL.Text
+  fileContent :: TL.Text,
+  modifiedLast :: UTCTime
 } deriving Generic
 
 
@@ -44,11 +46,12 @@ instance ToJSON ApiResponse
 -- Object that's stored in the database
 data FileIndex = FileIndex {
   fileName :: T.Text,
-  fileLocation :: T.Text
+  fileLocation :: T.Text,
+  lastModified :: UTCTime
 } deriving Generic
 
 fileIndexToDoc :: FileIndex -> Document
-fileIndexToDoc (FileIndex {fileName=fn, fileLocation=fl}) = ["name" =: fn, "path" =: fl]
+fileIndexToDoc (FileIndex {fileName=fn, fileLocation=fl, lastModified=t}) = ["name" =: fn, "path" =: fl, "modified" =: t]
 
 insertFile :: Document -> Action IO ()
 insertFile newFile = insert_ "files" newFile
@@ -68,7 +71,8 @@ data DirectoryDesc = DirectoryDesc {
   fName :: String,
   fLocation :: String,
   fileServer :: String,
-  port :: Int
+  port :: Int,
+  modified :: UTCTime
 } deriving Generic
 
 instance FromJSON DirectoryDesc
@@ -129,3 +133,11 @@ whiteCode = setSGRCode [SetConsoleIntensity BoldIntensity , SetColor Foreground 
 blueCode  = setSGRCode [SetConsoleIntensity BoldIntensity , SetColor Foreground Vivid Blue]
 greenCode  = setSGRCode [SetConsoleIntensity BoldIntensity , SetColor Foreground Vivid Green]
 resetCode = setSGRCode [Reset]
+
+splitFullPath :: TL.Text -> (TL.Text, TL.Text)
+splitFullPath p = (filePth, fileNme)
+  where
+    parts = TL.splitOn "/" p
+    filePth = TL.intercalate "/" (PC.init parts)
+    fileNme = PC.last parts
+

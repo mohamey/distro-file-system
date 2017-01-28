@@ -9,6 +9,7 @@ import Lib
 
 import Control.Monad.IO.Class
 import qualified Data.Map.Strict as Map
+import Data.Time.Clock
 import Data.Proxy as DP
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.IO as TLIO
@@ -16,6 +17,7 @@ import qualified Network.HTTP.Client as HPC
 import Servant.API
 import Servant.Client
 import System.Directory
+import System.Exit
 import System.Process
 
 -------------------------------- File Server API --------------------------------------------
@@ -91,221 +93,298 @@ getFileServer = do
   return res
 
 -- Args list should just have one index, the requested path
-parseCommand :: String -> [String] -> BaseUrl -> Env -> IO ()
-parseCommand "get" (p:_) adr env = do
+parseCommand :: String -> [String] -> BaseUrl -> Env -> Cache -> IO ()
+parseCommand "get" (p:_) adr env cache = do
   manager <- HPC.newManager HPC.defaultManagerSettings
   case Map.lookup p env of -- Find object id of requested file
     Nothing -> do
       putStrLn $ redCode ++ "Could not resolve file path locally"
-      prompt env adr
+      prompt env cache adr
     Just fileIdString -> do
       -- Query Directory server for file using it's id
-      let rr = ResolveRequest {requestId=fileIdString, prim=False}
-      res <- runClientM (dResolveRequest rr) (ClientEnv manager adr)
-      case res of
-        Left err -> do
-          putStrLn $ redCode ++ "Error: " ++ show err
-          prompt env adr
-        -- Check the directory server response
-        Right dsResponse -> do
-          case dsResponse of
-            Left x -> do
-              putStrLn $ redCode ++ "Error: " ++ (message x)
-              prompt env adr
-            Right dd -> do
-              -- Query the returned file server for the file
-              rres <- runClientM (getRequest (fLocation dd ++ "/" ++ fName dd)) (ClientEnv manager (url (fileServer dd) (port dd)))
-              case rres of
-                Left err -> do
-                  putStrLn $ redCode ++  "Error retrieving file from file server:\n" ++ show err
-                  prompt env adr
-                Right x -> do
-                  putStrLn $ greenCode ++ "File Retrieved: " ++ resetCode
-                  putStrLn (show $ fileContent x)
-                  writeFile (path x) (TL.unpack $ fileContent x)
-                  prompt env adr
+      maybeDD <- getFileDetails fileIdString False adr
+      case maybeDD of
+        Nothing -> do
+          putStrLn $ redCode ++ "Failed to retrieve file details from the directory server"
+          prompt env cache adr
+        Just dd -> do
+          -- Query the returned file server for the file
+          rres <- runClientM (getRequest (fLocation dd ++ "/" ++ fName dd)) (ClientEnv manager (url (fileServer dd) (port dd)))
+          case rres of
+            Left err -> do
+              putStrLn $ redCode ++  "Error retrieving file from file server:\n" ++ show err
+              prompt env cache adr
+            Right x -> do
+              putStrLn $ greenCode ++ "File Retrieved: " ++ resetCode
+              putStrLn (show $ fileContent x)
+              writeFile (path x) (TL.unpack $ fileContent x)
+              prompt env cache adr
 
-parseCommand "post" (f:_) adr env = liftIO $ do
+parseCommand "post" (f:_) adr env cache = liftIO $ do
   manager <- HPC.newManager HPC.defaultManagerSettings
   fileExists <- doesFileExist f
   case fileExists of
     False -> do
         putStrLn $ redCode ++ "File not found"
-        prompt env adr
+        prompt env cache adr
     True -> do
       -- Resolve file path to make sure file doesn't exist
       case Map.lookup ("/" ++ f) env of
         Just _ -> do
           putStrLn $ blueCode ++ "File already exists, use put command to update it"
-          prompt env adr
+          prompt env cache adr
         Nothing -> do
           -- Get File Server to send to
           response <- runClientM getFileServer (ClientEnv manager adr)
           case response of
             Left err -> do
               putStrLn $ redCode ++ "Error requesting file server for POST: \n" ++ show err
-              prompt env adr
+              prompt env cache adr
             Right fs -> do
               let serverAddress = address fs
               let serverPort = portNum fs
               fileContents <- TLIO.readFile f
-              res <- runClientM (postRequest (FileObject f fileContents)) (ClientEnv manager (url serverAddress serverPort))
+              time <- getCurrentTime
+              res <- runClientM (postRequest (FileObject f fileContents time)) (ClientEnv manager (url serverAddress serverPort))
               case res of
                 Left err -> do
                   putStrLn $ redCode ++ "Error posting file to fileserver\n" ++ show err
-                  prompt env adr
+                  prompt env cache adr
                 Right rresponse -> do
                   putStrLn $ greenCode ++ "Response from fileserver: \n" ++ resetCode ++ show (message rresponse)
-                  prompt env adr
+                  maybeEnv <- getListing adr
+                  case maybeEnv of
+                    Nothing -> do
+                      putStrLn $ redCode ++ "Failed to update local listing of files, try again later"
+                      prompt env cache adr
+                    Just newEnv -> do
+                      prompt newEnv cache adr
 
-parseCommand "put" (f:_) adr env = liftIO $ do
+parseCommand "put" (f:_) adr env cache = liftIO $ do
   manager <- HPC.newManager HPC.defaultManagerSettings
   fileExists <- doesFileExist f
   case fileExists of
     False -> do
       putStrLn $ redCode ++ "File not found"
-      prompt env adr
+      prompt env cache adr
     True -> do
       fileText <- TLIO.readFile f
-      response <- runClientM (putRequest (FileObject f fileText)) (ClientEnv manager adr)
+      time <- getCurrentTime
+      response <- runClientM (putRequest (FileObject f fileText time)) (ClientEnv manager adr)
       case response of
           Left err -> do
             putStrLn $ redCode ++ "Error: " ++ show err
-            prompt env adr
+            prompt env cache adr
           Right apiRes -> do
             case (result apiRes) of
               False -> do
                 putStrLn $ redCode ++ "Put failed: " ++ (message apiRes)
-                prompt env adr
+                prompt env cache adr
               True -> do
                 putStrLn $ greenCode ++ "Put Successful: " ++ resetCode ++ message(apiRes)
-                prompt env adr
+                prompt env cache adr
 
-parseCommand "delete" (fp:_) adr env = liftIO $ do
+parseCommand "delete" (fp:_) adr env cache = liftIO $ do
   manager <- HPC.newManager HPC.defaultManagerSettings
   case Map.lookup fp env of -- Find object id of requested file
     Nothing -> do
       putStrLn $ redCode ++ "File path did not resolve locally"
-      prompt env adr
+      prompt env cache adr
     Just fileIdString -> do
-      -- Query Directory server for file using it's id
-      let rr = ResolveRequest {requestId=fileIdString, prim=True}
-      res <- runClientM (dResolveRequest rr) (ClientEnv manager adr)
-      case res of
-        Left err -> do
-          putStrLn $ redCode ++ "Failed to resolve file path: \n" ++ (show err)
-          prompt env adr
-        Right response -> do
-          case response of
-            Left apiRes -> do
-              putStrLn $ redCode ++ "Error resolving file on directory server:\n" ++ (message apiRes)
-              prompt env adr
-            Right dd -> do
-              -- Using file path and dd details, send delete request
-              let objId = ObjIdentifier {filePath=fp}
-              rres <- runClientM (deleteRequest objId) (ClientEnv manager (url (fileServer dd) (port dd)))
-              case rres of
-                Left error -> do
-                  putStrLn $ redCode ++ "Servant error: \n" ++ show error
-                  prompt env adr
-                Right deleteResponse -> do
-                  putStrLn (message deleteResponse)
-                  prompt env adr
+      maybeDD <- getFileDetails fileIdString True adr
+      case maybeDD of
+        Nothing -> do
+          putStrLn $ redCode ++ "Failed to get file details from directory server"
+          prompt env cache adr
+        Just dd -> do
+          -- Using file path and dd details, send delete request
+          let objId = ObjIdentifier {filePath=fp}
+          rres <- runClientM (deleteRequest objId) (ClientEnv manager (url (fileServer dd) (port dd)))
+          case rres of
+            Left error -> do
+              putStrLn $ redCode ++ "Servant error: \n" ++ show error
+              prompt env cache adr
+            Right deleteResponse -> do
+              case (result deleteResponse) of
+                False -> do
+                  putStrLn $ redCode ++ (message deleteResponse)
+                  prompt env cache adr
+                True -> do
+                  let newEnv = Map.delete fp env
+                  putStrLn $ greenCode ++ "File Deleted"
+                  prompt newEnv cache adr
 
-parseCommand "open" (p:_) adr env = do
+parseCommand "open" (p:_) adr env cache = do
   manager <- HPC.newManager HPC.defaultManagerSettings
   case Map.lookup p env of -- Find object id of requested file
     Nothing -> do
       putStrLn $ redCode ++ "Could not resolve file path locally"
-      prompt env adr
+      prompt env cache adr
     Just fileIdString -> do
-      -- Query Directory server for file using it's id
-      let rr = ResolveRequest {requestId=fileIdString, prim=True}
-      res <- runClientM (dResolveRequest rr) (ClientEnv manager adr)
-      case res of
-        Left err -> do
-          putStrLn $ redCode ++ "Error: " ++ show err
-          prompt env adr
-        -- Check the directory server response
-        Right dsResponse -> do
-          case dsResponse of
-            Left x -> do
-              putStrLn $ redCode ++ "Error: " ++ (message x)
-              prompt env adr
-            Right dd -> do
-              -- Query the returned file server for the file
-              let fsUrl = url (fileServer dd) (port dd)
-              rres <- runClientM (openRequest (fLocation dd ++ fName dd)) (ClientEnv manager fsUrl)
-              case rres of
-                Left err -> do
-                  putStrLn $ redCode ++ "Error retrieving file from file server:\n" ++ show err
-                  prompt env adr
-                Right eitherRes -> do
-                  case eitherRes of
-                    Left y -> do
-                      putStrLn $ redCode ++ "Could not retrieve file from fileserver\n" ++ show (message y)
-                      prompt env adr
-                    Right x -> do
-                      -- Write the received file locally
-                      createDirectoryIfMissing True "temp"
-                      let nameParts = TL.splitOn "/" (TL.pack p)
-                      let tempPath = "temp/" ++ (TL.unpack $ last nameParts)
-                      TLIO.writeFile tempPath (fileContent x)
-                      -- Now open the file in text editor
-                      procHandle <- spawnCommand $ "vim " ++ tempPath
-                      _ <- waitForProcess procHandle
+      -- Check if the file has been cached
+      maybeDD <- getFileDetails fileIdString True adr
+      case maybeDD of
+        Nothing -> do
+          putStrLn $ redCode ++ "Could not get file details from directory server"
+          prompt env cache adr
+        Just dd -> do
+          let fsUrl = url (fileServer dd) (port dd)
+          let filePth = fLocation dd ++ fName dd
+          let cachePth = "cache" ++ filePth
+          time <- getCurrentTime
+          -- Check if file is present in cache
+          case Map.lookup (TL.pack p) cache of
+            Just timestamp -> do
+              -- Get timestamp of remote primary file
+              putStrLn $ blueCode ++ "Cache listing found"
+              let remoteTimestamp = modified dd
+              case timestamp <= remoteTimestamp of
+                True -> do
+                  putStrLn $ blueCode ++ "Opening cached copy..."
+                  _ <- editFile "vim" cachePth
+                  let newCache = Map.insert (TL.pack p) time cache
+                  -- Update the file at the fileserver
+                  f <- TLIO.readFile cachePth
+                  let fObject = FileObject p f time
+                  _ <- runCloseRequest fObject fsUrl
+                  prompt env newCache adr
+                False -> do
+                  putStrLn $ blueCode ++ "Cache out of date, retrieving up to date file"
+                  maybeFileObj <- runOpenRequest filePth fsUrl
+                  case maybeFileObj of
+                    Nothing -> do
+                      prompt env cache adr
+                    Just x -> do
+                      TLIO.writeFile cachePth (fileContent x)
+                      _ <- editFile "vim" cachePth
+                      let newCache = Map.insert (TL.pack p) time cache
                       -- Update the file at the fileserver
-                      f <- TLIO.readFile tempPath
-                      let fObject = FileObject {path=p, fileContent=f}
-                      updateRes <- runClientM (closeRequest fObject) (ClientEnv manager fsUrl)
-                      case updateRes of
-                        Left err -> do
-                          putStrLn $ redCode ++ "Servant error uploading updated file\n" ++ show err
-                          prompt env adr
-                        Right resres -> do
-                          case result resres of
-                            True -> do
-                              removeFile tempPath
-                              putStrLn $ greenCode ++ "Successfully updated file"
-                              prompt env adr
-                            False -> do
-                              putStrLn $ redCode ++ "Failed to upload updated file"
-                              prompt env adr
+                      f <- TLIO.readFile cachePth
+                      let fObject = FileObject p f time
+                      _ <- runCloseRequest fObject fsUrl
+                      prompt env newCache adr
+            Nothing -> do
+              putStrLn $ blueCode ++ "No cache entry found, retrieving file"
+              maybeFileObj <- runOpenRequest (fLocation dd ++ fName dd) fsUrl
+              case maybeFileObj of
+                Nothing -> do
+                  prompt env cache adr
+                Just x -> do
+                  -- Write the received file locally
+                  let (cp, _) = splitFullPath $ TL.pack cachePth
+                  createDirectoryIfMissing True (TL.unpack cp)
+                  TLIO.writeFile cachePth (fileContent x)
+                  -- Now open the file in text editor
+                  _ <- editFile "vim" cachePth
+                  -- Update cache to save file details
+                  let newCache = Map.insert (TL.pack p) time cache
+                  -- Update the file at the fileserver
+                  f <- TLIO.readFile cachePth
+                  let fObject = FileObject p f time
+                  _ <- runCloseRequest fObject fsUrl
+                  prompt env newCache adr
 
-parseCommand "list" _  adr env = liftIO $ do
+parseCommand "list" _  adr env cache = liftIO $ do
+  maybeEnv <- getListing adr
+  case maybeEnv of
+    Nothing -> do
+      prompt env cache adr
+    Just newEnv -> do
+      putStrLn $ greenCode ++ "Available Files:"
+      mapM_ (\x -> putStrLn $ whiteCode ++ x) (Map.keys newEnv)
+      prompt newEnv cache adr
+
+parseCommand _ _ adr e cache = do
+  putStrLn $ redCode ++ "Command unrecognized"
+  prompt e cache adr
+
+getListing :: BaseUrl -> IO (Maybe Env)
+getListing adr = do
   manager <- HPC.newManager HPC.defaultManagerSettings
   res <- runClientM listRequest (ClientEnv manager adr)
   case res of
     Left err -> do
-      putStrLn $ redCode ++ "Error: " ++ show err
-      prompt env adr
+      putStrLn $ redCode ++ "Failed to update file listing" ++ show err
+      return Nothing
     Right summaries -> do
       let values = map fileId summaries
       let keys = map fullPath summaries
       let zippedList = zip keys values
       let newEnv = Map.fromList zippedList
-      putStrLn $ greenCode ++ "Available Files:"
-      mapM_ (\x -> putStrLn $ whiteCode ++ x) keys
-      prompt newEnv adr
-
-parseCommand _ _ adr e = do
-  putStrLn $ redCode ++ "Command unrecognized"
-  prompt e adr
+      return $ Just newEnv
 
 run :: String -> Int -> IO ()
 run dirServerAddress dirServerPort = do
   let adr = url dirServerAddress dirServerPort
-  parseCommand "list" [] adr Map.empty
+  parseCommand "list" [] adr Map.empty Map.empty
 
-prompt :: Env -> BaseUrl -> IO ()
-prompt env burl = do
-  putStrLn $ whiteCode ++ "Please enter a command:"
+prompt :: Env -> Cache -> BaseUrl -> IO ()
+prompt env cache burl = do
+  putStrLn $ whiteCode ++ "Please enter a command:" ++ resetCode
   command <- getLine
   let commandParts = words command
-  parseCommand (head commandParts) (tail commandParts) burl env
+  parseCommand (head commandParts) (tail commandParts) burl env cache
 
 url :: String -> Int -> BaseUrl
 url s p = BaseUrl Http s p ""
 
 type Env = Map.Map String String
 
+type Cache = Map.Map TL.Text UTCTime
+
+getFileDetails :: String -> Bool -> BaseUrl -> IO (Maybe DirectoryDesc)
+getFileDetails idString getPrimary adr = do
+  manager <- HPC.newManager HPC.defaultManagerSettings
+  let rr = ResolveRequest idString getPrimary
+  res <- runClientM (dResolveRequest rr) (ClientEnv manager adr)
+  case res of
+    Left err -> do
+      putStrLn $ redCode ++ "Error: " ++ show err
+      return Nothing
+    -- Check the directory server response
+    Right dsResponse -> do
+      case dsResponse of
+        Left x -> do
+          putStrLn $ redCode ++ "Error: " ++ (message x)
+          return Nothing
+        Right dd -> do
+          return $ Just dd
+
+runCloseRequest :: FileObject -> BaseUrl -> IO Bool
+runCloseRequest fo adr = do
+  manager <- HPC.newManager HPC.defaultManagerSettings
+  updateRes <- runClientM (closeRequest fo) (ClientEnv manager adr)
+  case updateRes of
+    Left err -> do
+      putStrLn $ redCode ++ "Servant error uploading updated file\n" ++ show err
+      return False
+    Right resres -> do
+      case result resres of
+        True -> do
+          putStrLn $ greenCode ++ "Successfully updated file"
+          return True
+        False -> do
+          putStrLn $ redCode ++ "Failed to upload updated file"
+          return False
+
+editFile :: String -> String -> IO ExitCode
+editFile editor path = do
+  procHandle <- spawnCommand $ editor ++ " " ++ path
+  res <- waitForProcess procHandle
+  return res
+
+runOpenRequest :: String -> BaseUrl -> IO (Maybe FileObject)
+runOpenRequest fl adr = do
+  manager <- HPC.newManager HPC.defaultManagerSettings
+  rres <- runClientM (openRequest fl) (ClientEnv manager adr)
+  case rres of
+    Left err -> do
+      putStrLn $ redCode ++ "Error retrieving file from file server:\n" ++ show err
+      return Nothing
+    Right eitherRes -> do
+      case eitherRes of
+        Left y -> do
+          putStrLn $ redCode ++ "Could not retrieve file from fileserver\n" ++ show (message y)
+          return Nothing
+        Right x -> do
+          return $ Just x
