@@ -81,3 +81,5 @@ Please note, when running the system there will be problems deleting replicated 
 * GET from fileserver should have a response type (Either ApiResponse FileObject)
 * New Type for (Either ApiResponse FileObject)
 * Fileservers should find out their own ip for use by Directory server
+* Directory server should ensure duplicate files have the same timestamp as primary on entry
+* Lock should be acquired before client can edit cached copy of file
