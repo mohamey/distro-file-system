@@ -10,6 +10,7 @@ import Data.Aeson
 import Data.Bson
 import Data.List.Utils as DLU
 import Data.Text
+import Data.Time.Clock
 import Database.MongoDB as DDB
 import GHC.Generics
 import Prelude ()
@@ -32,7 +33,8 @@ data DirectoryDesc = DirectoryDesc {
   fName :: String,
   fLocation :: String,
   fileServer :: String,
-  port :: Int
+  port :: Int,
+  modified :: UTCTime
 } deriving (Generic, Eq)
 
 instance FromJSON DirectoryDesc
@@ -47,18 +49,20 @@ dirDescToDoc fi cls = [
       "server" =: (fileServer fi),
       "port" =: (port fi),
       "localID" =: (dbID fi),
-      "primary" =: cls
+      "primary" =: cls,
+      "modified" =: modified fi
   ]
 
 -- This converts a database document into a DirectoryDesc record
 docToDirDesc :: Text -> Document -> DirectoryDesc
-docToDirDesc idCol doc = DirectoryDesc fid (unescape fname) (unescape fpath) (unescape fserver) portNo
+docToDirDesc idCol doc = DirectoryDesc fid (unescape fname) (unescape fpath) (unescape fserver) portNo modifiedTime
   where
     fid = show $ DDB.valueAt idCol doc
     fname = show $ DDB.valueAt "name" doc
     fpath = (show $ DDB.valueAt "path" doc) ++ "/"
     fserver = (show $ DDB.valueAt "server" doc)
     portNo = read $ show $ DDB.valueAt "port" doc
+    modifiedTime = read (show $ DDB.valueAt "modified" doc) :: UTCTime
 
 -- This is sent by the client and handles moving an object
 data UpdateObject = UpdateObject {
