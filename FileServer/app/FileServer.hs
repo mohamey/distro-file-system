@@ -18,8 +18,6 @@ import Data.Proxy as DP
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.IO as TLIO
-import Data.Time.Clock
-
 import Database.MongoDB
 import qualified Network.HTTP.Client as HPC
 import Network.Wai.Handler.Warp
@@ -52,7 +50,7 @@ server pn adr = uploadNewFile
       let actualDirectory = "static-files/" ++ (TL.unpack fpath)
       let actualPath = actualDirectory ++ "/" ++ (TL.unpack fname)
       putStrLn actualPath
-      time <- getCurrentTime
+      let time = modifiedLast newFile
       let fileDoc = FileIndex {fileName=(TL.unpack fname), fileLocation=directory, lastModified=time}
       fileExists <- doesFileExist actualPath
       docExists <- withMongoDbConnection $ findOne $ select ["name"=:TL.toStrict fname, "path"=:T.pack directory] "files"
@@ -237,7 +235,7 @@ server pn adr = uploadNewFile
             Left x -> return x
             Right dds -> do
               -- Update file object with current time
-              time <- liftIO $ getCurrentTime
+              let time = modifiedLast fObject
               let newFObject = FileObject {path=(path fObject), fileContent=(fileContent fObject), modifiedLast=time}
               -- Mass update fileservers
               let addresses = map (\ x -> url (fileServer x) (port x)) dds
