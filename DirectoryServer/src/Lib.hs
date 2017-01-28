@@ -9,7 +9,7 @@ module Lib where
 import Data.Aeson
 import Data.Bson
 import Data.List.Utils as DLU
-import Data.Text
+import Data.Text as T
 import Data.Time.Clock
 import Database.MongoDB as DDB
 import GHC.Generics
@@ -44,11 +44,11 @@ instance ToJSON DirectoryDesc
 -- to be stored in the database
 dirDescToDoc :: DirectoryDesc -> Bool -> Document
 dirDescToDoc fi cls = [
-      "name" =: (fName fi),
-      "path" =: (fLocation fi),
-      "server" =: (fileServer fi),
+      "name" =: T.pack (fName fi),
+      "path" =: T.pack (fLocation fi),
+      "server" =: T.pack (fileServer fi),
       "port" =: (port fi),
-      "localID" =: (dbID fi),
+      "localID" =: T.pack (dbID fi),
       "primary" =: cls,
       "modified" =: modified fi
   ]
