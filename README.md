@@ -80,3 +80,4 @@ Please note, when running the system there will be problems deleting replicated 
 * Auto update client list of files on post/delete
 * GET from fileserver should have a response type (Either ApiResponse FileObject)
 * New Type for (Either ApiResponse FileObject)
+* Fileservers should find out their own ip for use by Directory server
