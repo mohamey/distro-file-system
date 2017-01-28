@@ -15,6 +15,7 @@ import Data.Aeson
 import Data.Bson
 import Data.List.Utils as DLU
 import Data.Text as T
+import Data.Time.Clock
 import qualified Data.Text.Lazy as TL
 import Database.MongoDB as DDB
 import GHC.Generics
@@ -26,7 +27,8 @@ import Servant
 -- It contains the file path and its contents
 data FileObject = FileObject {
   path :: String,
-  fileContent :: TL.Text
+  fileContent :: TL.Text,
+  modifiedLast :: UTCTime
 } deriving Generic
 
 instance FromJSON FileObject
@@ -44,7 +46,8 @@ instance ToJSON ApiResponse
 -- Object that's stored in the database
 data FileIndex = FileIndex {
   fileName :: String,
-  fileLocation :: String
+  fileLocation :: String,
+  lastModified :: UTCTime
 } deriving Generic
 
 -- A Record representing how file details are stored
@@ -54,7 +57,8 @@ data DirectoryDesc = DirectoryDesc {
   fName :: String,
   fLocation :: String,
   fileServer :: String,
-  port :: Int
+  port :: Int,
+  modified :: UTCTime
 } deriving Generic
 
 instance FromJSON DirectoryDesc
@@ -91,16 +95,17 @@ instance ToJSON ObjIdentifier
 
 
 fileIndexToDoc :: FileIndex -> Document
-fileIndexToDoc (FileIndex {fileName=fn, fileLocation=fl}) = ["name" =: fn, "path" =: fl]
+fileIndexToDoc (FileIndex {fileName=fn, fileLocation=fl, lastModified=t}) = ["name" =: fn, "path" =: fl, "modified"=:t]
 
 unescape :: String -> String
 unescape s = DLU.replace "\\" "" $ DLU.replace "\"" "" $ DLU.replace "\\\\" "" s
 
 docToFileIndex :: Document -> FileIndex
-docToFileIndex doc = FileIndex (unescape fname) (unescape fpath)
+docToFileIndex doc = FileIndex (unescape fname) (unescape fpath) time
   where
     fname = show $ DDB.valueAt "name" doc 
     fpath = (show $ DDB.valueAt "path" doc) ++ "/"
+    time = read (show $ DDB.valueAt "modified" doc) :: UTCTime
 
 resolveFileIndex :: FileIndex -> T.Text
 resolveFileIndex fi = T.pack $ unescape (fileLocation fi ++ fileName fi)
@@ -137,11 +142,12 @@ docToObjs docs = PC.map fileIndexToObjId fileIndexes
     fileIndexes = PC.map docToFileIndex docs
 
 docToDirDesc :: String -> Int -> Document -> DirectoryDesc
-docToDirDesc ip portNo doc = DirectoryDesc (unescape fid) (unescape fn) (unescape fl) ip portNo
+docToDirDesc ip portNo doc = DirectoryDesc (unescape fid) (unescape fn) (unescape fl) ip portNo timeStamp
   where
     fid = show $ valueAt "_id" doc
     fn = show $ valueAt "name" doc
     fl = show $ valueAt "path" doc
+    timeStamp = read (show $ valueAt "modified" doc) :: UTCTime
 
 data FileServer = FileServer {
   address :: String,
@@ -169,3 +175,10 @@ type DSAPI = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiRespons
          :<|> "add" :> ReqBody '[JSON] FileServer :> Post '[JSON] ApiResponse
          :<|> "delete" :> ReqBody '[JSON] DirectoryDesc :> Delete '[JSON] ApiResponse
          :<|> "getSecondaries" :> QueryParam "path" String :> Get '[JSON] (Either ApiResponse [DirectoryDesc])
+
+splitFullPath :: TL.Text -> (TL.Text, TL.Text)
+splitFullPath p = (filePth, fileNme)
+  where
+    parts = TL.splitOn "/" p
+    filePth = TL.intercalate "/" (PC.init parts)
+    fileNme = PC.last parts

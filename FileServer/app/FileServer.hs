@@ -18,6 +18,8 @@ import Data.Proxy as DP
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.IO as TLIO
+import Data.Time.Clock
+
 import Database.MongoDB
 import qualified Network.HTTP.Client as HPC
 import Network.Wai.Handler.Warp
@@ -45,16 +47,15 @@ server pn adr = uploadNewFile
     -- Upload a new file to the server
     uploadNewFile :: FileObject -> Handler ApiResponse
     uploadNewFile newFile = liftIO $ do
-      let dirParts = TL.splitOn "/" $ TL.pack (path newFile)
-      let dirTail = TL.unpack (TL.intercalate "/" (DL.init dirParts)) -- Get the directory for the new file
-      let file = DL.last dirParts
-      let directory = if '/' == (PC.head dirTail) then dirTail else "/" ++ dirTail
-      let actualDirectory = "static-files" ++ directory
-      let actualPath = actualDirectory ++ "/" ++ (TL.unpack file)
+      let (fpath, fname) = splitFullPath (TL.pack $ path newFile)
+      let directory = "/" ++ (TL.unpack fpath)
+      let actualDirectory = "static-files/" ++ (TL.unpack fpath)
+      let actualPath = actualDirectory ++ "/" ++ (TL.unpack fname)
       putStrLn actualPath
-      let fileDoc = FileIndex {fileName=(TL.unpack file), fileLocation=directory}
+      time <- getCurrentTime
+      let fileDoc = FileIndex {fileName=(TL.unpack fname), fileLocation=directory, lastModified=time}
       fileExists <- doesFileExist actualPath
-      docExists <- withMongoDbConnection $ findOne $ select ["name"=:TL.toStrict file, "path"=:directory] "files"
+      docExists <- withMongoDbConnection $ findOne $ select ["name"=:TL.toStrict fname, "path"=:T.pack directory] "files"
       -- Only if the file is not present in the file system and there is no database listing
       case (fileExists == False) && (docExists == Nothing) of
         False -> return ApiResponse {result=False, message="File already exists"}
@@ -66,10 +67,11 @@ server pn adr = uploadNewFile
             -- -- Convert FileIndex to [DirectoryDesc]
             let dd = DirectoryDesc {
                   dbID = show stringId,
-                  fName = show file,
+                  fName = TL.unpack fname,
                   fLocation = directory,
                   fileServer = "127.0.0.1",
-                  port = pn
+                  port = pn,
+                  modified = time
             }
             -- Send dd to directory server
             manager <- liftIO $ HPC.newManager HPC.defaultManagerSettings -- Get a HTTP manager
@@ -91,14 +93,11 @@ server pn adr = uploadNewFile
     deleteFile specifiedFile = liftIO $ do
       -- Get the file name, specified path, and actual path
       putStrLn "Function called to delete primary file copy"
-      let dirParts = TL.splitOn "/" $ TL.pack (filePath specifiedFile)
-      let specFileName = DL.last dirParts
-      let dir = TL.intercalate "/" (DL.init dirParts)
-      let directory = if (TL.head dir) == '/' then "static-files" ++ (TL.unpack dir) else "static-files/" ++ (TL.unpack dir)
-      let actualPath = directory ++ "/" ++ TL.unpack specFileName
+      let (fpath, fname) = splitFullPath (TL.pack $ filePath specifiedFile)
+      let directory = if (TL.head fpath) == '/' then "static-files" ++ (TL.unpack fpath) else "static-files/" ++ (TL.unpack fpath)
+      let actualPath = directory ++ "/" ++ TL.unpack fname
       -- Create fileobject for mongodb
-      let fi = FileIndex {fileName=(TL.unpack specFileName), fileLocation=(TL.unpack dir)}
-      let mongoDoc = fileIndexToDoc fi
+      let mongoDoc = ["name" =: (TL.toStrict fname), "path" =: (TL.toStrict fpath)]
       fileExists <- doesFileExist actualPath
       case fileExists of
         False -> do return ApiResponse {result=False, message="File not found on fileserver"}
@@ -152,23 +151,19 @@ server pn adr = uploadNewFile
     deleteSecondary specifiedFile = liftIO $ do
   -- Get the file name, specified path, and actual path
       putStrLn "Function called to delete local secondary copy of file"
-      let dirParts = TL.splitOn "/" $ TL.pack (filePath specifiedFile)
-      let specFileName = DL.last dirParts
-      let dir = TL.intercalate "/" (DL.init dirParts)
-      let directory = if (TL.head dir) == '/' then "static-files" ++ (TL.unpack dir) else "static-files/" ++ (TL.unpack dir)
-      let actualPath = directory ++ "/" ++ TL.unpack specFileName
-      -- Create fileobject for mongodb
-      let fi = FileIndex {fileName=(TL.unpack specFileName), fileLocation=(TL.unpack dir)}
-      let mongoDoc = fileIndexToDoc fi
+      let (path, fname) = splitFullPath (TL.pack $ filePath specifiedFile)
+      let directory = if (TL.head path) == '/' then "static-files" ++ (TL.unpack path) else "static-files/" ++ (TL.unpack path)
+      let actualPath = directory ++ "/" ++ TL.unpack fname
       fileExists <- doesFileExist actualPath
       putStrLn "Deleting secondary"
       case fileExists of
         False -> do return ApiResponse {result=False, message="File not found on fileserver"}
         True -> do
+          let mongoDoc = ["name" =: (TL.toStrict fname), "path" =: (TL.toStrict path)]
           maybeDoc <- withMongoDbConnection (findOne $ select mongoDoc "files")
           case maybeDoc of
             Nothing -> do
-              putStrLn $ "Specified document not found:\n" ++ show mongoDoc
+              putStrLn $ "Specified document not found\n"
               return ApiResponse{result=False, message="File not found"}
             Just doc -> do
               -- Send delete request to directory server
@@ -189,15 +184,19 @@ server pn adr = uploadNewFile
 
     updateFile :: FileObject -> Handler ApiResponse
     updateFile specifiedFile = liftIO $ do
-      putStrLn "Updating File"
+      putStrLn "Updating file"
       let actualPath = if (PC.head (path specifiedFile)) == '/' then "static-files" ++ (path specifiedFile) else "static-files/" ++ (path specifiedFile)
       putStrLn $ "Updating " ++ actualPath
-      doesFileExist actualPath >>= -- Check if the file exists
-        (\res -> if res then
-            TLIO.writeFile actualPath (fileContent specifiedFile) >> -- Update the file
-              return ApiResponse {result=True, message="File successfully updated"}
-        else
-            return ApiResponse {result=False, message="File does not exist"})
+      fileExists <- doesFileExist actualPath
+      case fileExists of
+        False -> do
+          return ApiResponse {result=False, message="File does not exist"}
+        True -> do
+          TLIO.writeFile actualPath (fileContent specifiedFile)
+          let (fname, fpath) = splitFullPath (TL.pack $ path specifiedFile)
+          let fIndex = FileIndex {fileName=(TL.unpack fname), fileLocation=(TL.unpack fpath), lastModified=(modifiedLast specifiedFile)}
+          withMongoDbConnection $ replace (select ["name" =: (TL.toStrict fname), "path" =: (TL.toStrict fpath)] "files") (fileIndexToDoc fIndex)
+          return ApiResponse {result=True, message="File successfully updated"}
 
     getFile :: Maybe String -> Handler FileObject
     getFile mp = case mp of
@@ -206,13 +205,21 @@ server pn adr = uploadNewFile
         return FileObject {path="", fileContent="Path not specified"}
       Just p -> liftIO $ do
         putStrLn "Getting file: "
-        let actualPath = "static-files" ++ p
-        doesFileExist actualPath >>=
-          (\res -> if res then
-              TLIO.readFile actualPath >>=
-                (\txt -> return FileObject{path=p, fileContent=txt})
-          else
-              return FileObject{path="", fileContent="File Not Found"})
+        let (fp, f) = splitFullPath (TL.pack p)
+        maybeDoc <- withMongoDbConnection $ findOne $ select ["name" =: (TL.toStrict f), "path" =: (TL.toStrict fp)] "files"
+        case maybeDoc of
+          Nothing -> do
+            return FileObject {path="", fileContent="File not Found"}
+          Just doc -> do
+            let actualPath = "static-files" ++ p
+            let fi = docToFileIndex doc
+            pathExists <- doesFileExist actualPath
+            case pathExists of
+              False -> do
+                return $ FileObject {path="", fileContent="File Not Found"}
+              True -> do
+                txt <- TLIO.readFile actualPath
+                return $ FileObject p txt (lastModified fi)
 
     closeFile :: FileObject -> Handler ApiResponse
     closeFile fObject = do
@@ -229,10 +236,12 @@ server pn adr = uploadNewFile
           case eitherRes of
             Left x -> return x
             Right dds -> do
-              -- Update the secondaries
-              let addresses = map (\ x -> url (fileServer x) (port x)) dds
+              -- Update file object with current time
+              time <- liftIO $ getCurrentTime
+              let newFObject = FileObject {path=(path fObject), fileContent=(fileContent fObject), modifiedLast=time}
               -- Mass update fileservers
-              massRes <- liftIO $ massRunClient addresses (updateFsReq fObject) manager
+              let addresses = map (\ x -> url (fileServer x) (port x)) dds
+              massRes <- liftIO $ massRunClient addresses (updateFsReq newFObject) manager
               case massRes of
                 Left err -> do
                   liftIO $ putStrLn $ show err
@@ -240,9 +249,14 @@ server pn adr = uploadNewFile
                 Right False -> do
                   return ApiResponse {result=False, message="Failed to update secondary copies"}
                 Right True -> do
-                  -- Call update function with file object
+                  -- Update file with new timestamp
+                  let (p, f) = splitFullPath (TL.pack $ path fObject)
+                  let fi = FileIndex{fileName=(TL.unpack f), fileLocation=(TL.unpack p), lastModified=time}
+                  liftIO $ withMongoDbConnection $ replace (select ["name" =: (TL.toStrict f), "path" =: (TL.toStrict p)] "files") (fileIndexToDoc fi) 
+                  -- remove from file from list of open files
                   liftIO $ withMongoDbConnection (deleteOne $ select ["path" =: (path fObject)] "openFiles")
-                  updateFile fObject
+                  -- Call function to update file
+                  updateFile newFObject
 
     openFile :: Maybe String -> Handler (Either ApiResponse FileObject)
     openFile mp = do
@@ -264,11 +278,19 @@ server pn adr = uploadNewFile
                 Just _ -> return $ Left ApiResponse {result=False, message="File already opened by another client"}
                 Nothing -> do
                   fContent <- liftIO $ TLIO.readFile actualPath
-                  -- Add file path to list of open files
-                  liftIO $ putStrLn p
-                  liftIO $ withMongoDbConnection (insert_ "openFiles" ["path" =: p])
-                  -- Send file back to Client
-                  return $ Right FileObject{path=p, fileContent=fContent}
+                  -- Get files time
+                  let (fp, f) = splitFullPath (TL.pack p)
+                  mDoc <- liftIO $ withMongoDbConnection $ findOne $ select ["name" =: (TL.toStrict f), "path" =: (TL.toStrict fp)] "files"
+                  case mDoc of
+                    Nothing -> do
+                      return $ Left $ ApiResponse False "File listing not found in database"
+                    Just doc -> do
+                      let fi = docToFileIndex doc
+                      -- Add file path to list of open files
+                      liftIO $ putStrLn p
+                      liftIO $ withMongoDbConnection (insert_ "openFiles" ["path" =: p])
+                      -- Send file back to Client
+                      return $ Right FileObject{path=p, fileContent=fContent, modifiedLast=(lastModified fi)}
 
     listFiles :: Handler [ObjIdentifier]
     listFiles = liftIO $ do
