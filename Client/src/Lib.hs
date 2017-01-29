@@ -22,6 +22,9 @@ import Prelude.Compat as PC
 import Servant
 import System.Console.ANSI
 
+type FileRequest = Either ApiResponse FileObject
+type DescRequest = Either ApiResponse DirectoryDesc
+
 -- A representation of files on the server
 -- This will be stored in the mongodb database
 data FileObject = FileObject {
@@ -118,11 +121,11 @@ type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "remove" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
          :<|> "close" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
-         :<|> "open" :> QueryParam "path" String :> Get '[JSON] (Either ApiResponse FileObject)
-         :<|> "files" :> QueryParam "path" String :> Get '[JSON] (Either ApiResponse FileObject)
+         :<|> "open" :> QueryParam "path" String :> Get '[JSON] FileRequest
+         :<|> "files" :> QueryParam "path" String :> Get '[JSON] FileRequest
          :<|> "list" :> Get '[JSON] [ObjIdentifier]
 
-type DSAPI ="resolve" :> ReqBody '[JSON] ResolveRequest :> Post '[JSON] (Either ApiResponse DirectoryDesc)
+type DSAPI ="resolve" :> ReqBody '[JSON] ResolveRequest :> Post '[JSON] DescRequest
          :<|> "list" :> Get '[JSON] [FileSummary]
          :<|> "getFs" :> Get '[JSON] FileServer
 

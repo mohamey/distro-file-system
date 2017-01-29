@@ -26,8 +26,8 @@ upload :: FileObject -> ClientM ApiResponse
 remove :: ObjIdentifier -> ClientM ApiResponse
 update :: FileObject -> ClientM ApiResponse
 closeF :: FileObject -> ClientM ApiResponse
-openF :: Maybe String -> ClientM (Either ApiResponse FileObject)
-get :: Maybe String -> ClientM (Either ApiResponse FileObject)
+openF :: Maybe String -> ClientM FileRequest
+get :: Maybe String -> ClientM FileRequest
 list :: ClientM [ObjIdentifier]
 
 papi :: DP.Proxy API
@@ -36,7 +36,7 @@ papi = DP.Proxy
 upload :<|> remove :<|> update :<|> closeF :<|> openF :<|> get :<|> list = client papi
 
 -- Write queries to be performed
-getRequest :: String -> ClientM (Either ApiResponse FileObject)
+getRequest :: String -> ClientM FileRequest
 getRequest reqPath = do
   fi <- get (Just reqPath)
   return fi
@@ -56,7 +56,7 @@ closeRequest fo = do
   res <- closeF fo
   return res
 
-openRequest :: String -> ClientM (Either ApiResponse FileObject)
+openRequest :: String -> ClientM FileRequest
 openRequest s = do
   res <- openF (Just s)
   return res
@@ -68,7 +68,7 @@ deleteRequest fpath = do
 
 ------------------------------- Directory Server API ------------------------------------------
 
-dresolve :: ResolveRequest -> ClientM (Either ApiResponse DirectoryDesc)
+dresolve :: ResolveRequest -> ClientM DescRequest
 dlist :: ClientM [FileSummary]
 dgetFs :: ClientM FileServer
 
@@ -77,7 +77,7 @@ dsapi = DP.Proxy
 
 dresolve :<|> dlist :<|> dgetFs = client dsapi
 
-dResolveRequest :: ResolveRequest -> ClientM (Either ApiResponse DirectoryDesc)
+dResolveRequest :: ResolveRequest -> ClientM DescRequest
 dResolveRequest rr = do
   res <- dresolve rr
   return res
@@ -108,18 +108,22 @@ parseCommand "get" (p:_) adr env cache = do
           putStrLn $ redCode ++ "Failed to retrieve file details from the directory server"
           prompt env cache adr
         Just dd -> do
+          -- Cache path and file
+          let cacheDir = "cache" ++ fLocation dd
+          let cachePth = "cache" ++ p
           -- Check if there is a cached copy and if it's up to date
           case Map.lookup (TL.pack p) cache of
             Nothing -> do
               -- Query the returned file server for the file
-              maybeContents <- runGetRequest (fLocation dd ++ "/" ++ fName dd) (url (fileServer dd) (port dd))
+              maybeContents <- runGetRequest  p (url (fileServer dd) (port dd))
+              -- If theres no cached copy, directory might not exist yet
+              createDirectoryIfMissing True cacheDir
               case maybeContents of
                 Nothing -> do
                   prompt env cache adr
                 Just (f, t) -> do
                   putStrLn $ TL.unpack f
-                  writeFile ("static-files" ++ p) (TL.unpack f)
-                  writeFile ("cache" ++ p) (TL.unpack f)
+                  writeFile cachePth (TL.unpack f)
                   let newCache = Map.insert (TL.pack p) t cache
                   prompt env newCache adr
             Just timestamp -> do
@@ -127,18 +131,17 @@ parseCommand "get" (p:_) adr env cache = do
               if timestamp <= remoteTimestamp then do
                 -- Cache copy up to date, print it
                 putStrLn $ blueCode ++ "Cached copy up to date, opening..."
-                contents <- TLIO.readFile $ "cache" ++ p
+                contents <- TLIO.readFile cachePth
                 putStrLn $ whiteCode ++ (TL.unpack contents)
                 prompt env cache adr
               else do
-                maybeContents <- runGetRequest (fLocation dd ++ "/" ++ fName dd) (url (fileServer dd) (port dd))
+                maybeContents <- runGetRequest p (url (fileServer dd) (port dd))
                 case maybeContents of
                   Nothing -> do
                     prompt env cache adr
                   Just (f, t) -> do
                     putStrLn $ TL.unpack f
-                    writeFile ("static-files" ++ p) (TL.unpack f)
-                    writeFile ("cache" ++ p) (TL.unpack f)
+                    writeFile cachePth (TL.unpack f)
                     let nCache = Map.delete (TL.pack p) cache
                     let newCache = Map.insert (TL.pack p) t nCache
                     prompt env newCache adr
