@@ -176,7 +176,7 @@ type FSAPI = "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
 
 type DSAPI = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] UpdateObject :> Put '[JSON] ApiResponse
-         :<|> "add" :> RemoteHost :> Post '[JSON] ApiResponse
+         :<|> "add" :> QueryParam "port" Int :> RemoteHost :> Post '[JSON] ApiResponse
          :<|> "delete" :> ReqBody '[JSON] DirectoryDesc :> Delete '[JSON] ApiResponse
          :<|> "getSecondaries" :> QueryParam "path" String :> Get '[JSON] DescsRequest
 
