@@ -123,27 +123,21 @@ server pn adr = uploadNewFile
                       -- Mass Delete fileservers
                       putStrLn "Deleting Secondaries"
                       putStrLn $ show $ addresses
-                      massRes <- liftIO $ massRunClient addresses (deleteFsReq specifiedFile) manager
-                      case massRes of
+                      massRunClient addresses (deleteFsReq specifiedFile) manager
+                      -- Since transactions have not yet been implemented, there is no guarantee all secondary copies will be deleted and no clean way of ensuring they are deleted in an all or nothing approach
+                      putStrLn "Deleting local primary copy"
+                      withMongoDbConnection (deleteOne $ select mongoDoc "files")
+                      -- Send delete request to directory server
+                      let dd = docToDirDesc "127.0.0.1" pn doc
+                      -- Send delete request to directory server
+                      response <- liftIO $ runClientM (deleteRequest dd) (ClientEnv manager adr)
+                      case response of
                         Left err -> do
-                          liftIO $ putStrLn $ show err
-                          return ApiResponse {result=False, message="Failed to delete secondary copies of file"}
-                        Right False -> do
-                          return ApiResponse {result=False, message="Something went wrong deleting secondary copies of files. Try again later"}
-                        Right True -> do
-                          putStrLn "Deleting local primary copy"
-                          withMongoDbConnection (deleteOne $ select mongoDoc "files")
-                          -- Send delete request to directory server
-                          let dd = docToDirDesc "127.0.0.1" pn doc
-                          -- Send delete request to directory server
-                          response <- liftIO $ runClientM (deleteRequest dd) (ClientEnv manager adr)
-                          case response of
-                            Left err -> do
-                              putStrLn $ "An error occurred deleting the file listing from the directory server:\n" ++ show err
-                              return ApiResponse{result=False, message="An error occurred deleting file from directory server"}
-                            Right res -> do
-                              removeFile actualPath
-                              return res
+                          putStrLn $ "An error occurred deleting the file listing from the directory server:\n" ++ show err
+                          return ApiResponse{result=False, message="An error occurred deleting file from directory server"}
+                        Right res -> do
+                          removeFile actualPath
+                          return res
 
     deleteSecondary :: ObjIdentifier -> Handler ApiResponse
     deleteSecondary specifiedFile = liftIO $ do
@@ -196,7 +190,7 @@ server pn adr = uploadNewFile
           withMongoDbConnection $ replace (select ["name" =: (TL.toStrict fname), "path" =: (TL.toStrict fpath)] "files") (fileIndexToDoc fIndex)
           return ApiResponse {result=True, message="File successfully updated"}
 
-    getFile :: Maybe String -> Handler (Either ApiResponse FileObject)
+    getFile :: Maybe String -> Handler FileRequest
     getFile mp = case mp of
       Nothing -> liftIO $ do
         putStrLn "Path not specified"
@@ -204,9 +198,13 @@ server pn adr = uploadNewFile
       Just p -> liftIO $ do
         putStrLn "Getting file: "
         let (fp, f) = splitFullPath (TL.pack p)
-        maybeDoc <- withMongoDbConnection $ findOne $ select ["name" =: (TL.toStrict f), "path" =: (TL.toStrict fp)] "files"
+        putStrLn p
+        putStrLn (TL.unpack fp)
+        let query = ["name" =: (TL.toStrict f), "path" =: (TL.toStrict fp)]
+        maybeDoc <- withMongoDbConnection $ findOne $ select query "files"
         case maybeDoc of
           Nothing -> do
+            putStrLn $ show query
             return $ Left $ ApiResponse False "Document listing not found"
           Just doc -> do
             let actualPath = "static-files" ++ p
@@ -239,24 +237,18 @@ server pn adr = uploadNewFile
               let newFObject = FileObject {path=(path fObject), fileContent=(fileContent fObject), modifiedLast=time}
               -- Mass update fileservers
               let addresses = map (\ x -> url (fileServer x) (port x)) dds
-              massRes <- liftIO $ massRunClient addresses (updateFsReq newFObject) manager
-              case massRes of
-                Left err -> do
-                  liftIO $ putStrLn $ show err
-                  return ApiResponse {result=False, message="Error updating secondary copies"}
-                Right False -> do
-                  return ApiResponse {result=False, message="Failed to update secondary copies"}
-                Right True -> do
-                  -- Update file with new timestamp
-                  let (p, f) = splitFullPath (TL.pack $ path fObject)
-                  let fi = FileIndex{fileName=(TL.unpack f), fileLocation=(TL.unpack p), lastModified=time}
-                  liftIO $ withMongoDbConnection $ replace (select ["name" =: (TL.toStrict f), "path" =: (TL.toStrict p)] "files") (fileIndexToDoc fi) 
-                  -- remove from file from list of open files
-                  liftIO $ withMongoDbConnection (deleteOne $ select ["path" =: (path fObject)] "openFiles")
-                  -- Call function to update file
-                  updateFile newFObject
+              liftIO $ massRunClient addresses (updateFsReq newFObject) manager
+              -- Since transactions have not yet been implemented, there is no guarantee all secondary copies will be updated and no clean way of ensuring they are updated in an all or nothing approach
+              -- Update file with new timestamp
+              let (p, f) = splitFullPath (TL.pack $ path fObject)
+              let fi = FileIndex{fileName=(TL.unpack f), fileLocation=(TL.unpack p), lastModified=time}
+              liftIO $ withMongoDbConnection $ replace (select ["name" =: (TL.toStrict f), "path" =: (TL.toStrict p)] "files") (fileIndexToDoc fi) 
+              -- remove from file from list of open files
+              liftIO $ withMongoDbConnection (deleteOne $ select ["path" =: (path fObject)] "openFiles")
+              -- Call function to update file
+              updateFile newFObject
 
-    openFile :: Maybe String -> Handler (Either ApiResponse FileObject)
+    openFile :: Maybe String -> Handler FileRequest
     openFile mp = do
       case mp of
         Nothing -> do
@@ -335,8 +327,8 @@ url :: String -> Int -> BaseUrl
 url s p = BaseUrl Http s p ""
 
 -- Takes object, list of addresses, client action
-massRunClient :: [BaseUrl] -> ClientM a -> HPC.Manager -> IO (Either ServantError Bool)
-massRunClient [] _ _ = return $ Right True
+massRunClient :: [BaseUrl] -> ClientM a -> HPC.Manager -> IO ()
+massRunClient [] _ _ = return ()
 massRunClient (x:xs) action manager = do
   res <- runClientM action (ClientEnv manager x)
   case res of
@@ -372,7 +364,7 @@ deleteRequest dd = do
   res <- deleteDD dd
   return res
 
-getSecondariesReq :: String -> ClientM (Either ApiResponse [DirectoryDesc])
+getSecondariesReq :: String -> ClientM DescsRequest
 getSecondariesReq s = do
   res <- getSecondaries (Just s)
   return res

@@ -23,6 +23,10 @@ import Prelude ()
 import Prelude.Compat as PC
 import Servant
 
+type FileRequest = Either ApiResponse FileObject
+type DescRequest = Either ApiResponse DirectoryDesc
+type DescsRequest = Either ApiResponse [DirectoryDesc]
+
 -- A representation of files on the server
 -- It contains the file path and its contents
 data FileObject = FileObject {
@@ -163,8 +167,8 @@ type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "removeSec" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
          :<|> "close" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
-         :<|> "open" :> QueryParam "path" String :> Get '[JSON] (Either ApiResponse FileObject)
-         :<|> "files" :> QueryParam "path" String :> Get '[JSON] (Either ApiResponse FileObject)
+         :<|> "open" :> QueryParam "path" String :> Get '[JSON] FileRequest
+         :<|> "files" :> QueryParam "path" String :> Get '[JSON] FileRequest
          :<|> "list" :> Get '[JSON] [ObjIdentifier]
 
 type FSAPI = "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
@@ -174,7 +178,7 @@ type DSAPI = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiRespons
          :<|> "update" :> ReqBody '[JSON] UpdateObject :> Put '[JSON] ApiResponse
          :<|> "add" :> ReqBody '[JSON] FileServer :> Post '[JSON] ApiResponse
          :<|> "delete" :> ReqBody '[JSON] DirectoryDesc :> Delete '[JSON] ApiResponse
-         :<|> "getSecondaries" :> QueryParam "path" String :> Get '[JSON] (Either ApiResponse [DirectoryDesc])
+         :<|> "getSecondaries" :> QueryParam "path" String :> Get '[JSON] DescsRequest
 
 splitFullPath :: TL.Text -> (TL.Text, TL.Text)
 splitFullPath p = (filePth, fileNme)
