@@ -17,6 +17,9 @@ import Prelude ()
 import Prelude.Compat as PC
 import Servant
 
+type DescRequest = Either ApiResponse DirectoryDesc
+type DescsRequest = Either ApiResponse [DirectoryDesc]
+
 -- This is returned after some API queries
 data ApiResponse = ApiResponse {
   result :: Bool,
@@ -129,9 +132,9 @@ dirDescToSummary fi = FileSummary {fileId=fid, fullPath=p}
 
 type API = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] UpdateObject :> Put '[JSON] ApiResponse
-         :<|> "resolve" :> ReqBody '[JSON] ResolveRequest :> Post '[JSON] (Either ApiResponse DirectoryDesc)
+         :<|> "resolve" :> ReqBody '[JSON] ResolveRequest :> Post '[JSON] DescRequest
          :<|> "list" :> Get '[JSON] [FileSummary]
          :<|> "add" :> ReqBody '[JSON] FileServer :> Post '[JSON] ApiResponse
          :<|> "getFs" :> Get '[JSON] FileServer
          :<|> "delete" :> ReqBody '[JSON] DirectoryDesc :> Delete '[JSON] ApiResponse
-         :<|> "getSecondaries" :> QueryParam "path" String :> Get '[JSON] (Either ApiResponse [DirectoryDesc])
+         :<|> "getSecondaries" :> QueryParam "path" String :> Get '[JSON] DescsRequest

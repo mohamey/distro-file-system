@@ -59,7 +59,7 @@ server = uploadFileIndexes
       -- Send back response
       return ApiResponse {result=True, message="Successfully modified file"}
 
-    resolveFileID :: ResolveRequest -> Handler (Either ApiResponse DirectoryDesc)
+    resolveFileID :: ResolveRequest -> Handler DescRequest
     resolveFileID rr = do
       -- Build a query using file id
       let objID = read (requestId rr) :: ObjectId
@@ -129,7 +129,7 @@ server = uploadFileIndexes
         liftIO $ withMongoDbConnection $ deleteOne $ select (dirDescToDoc dd True) "files"
         return ApiResponse{result=True, message="File deleted"}
 
-    getSecondaries :: Maybe String -> Handler (Either ApiResponse [DirectoryDesc])
+    getSecondaries :: Maybe String -> Handler DescsRequest
     getSecondaries Nothing = return $ Left ApiResponse {result=False, message="No path provided"}
     getSecondaries (Just p) = do
       let parts = T.splitOn "/" (T.pack p)
