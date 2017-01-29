@@ -40,10 +40,11 @@ server = uploadFileIndexes
 
   where
     -- Upload new file indexes to directory server
-    uploadFileIndexes :: [DirectoryDesc] -> Handler ApiResponse
-    uploadFileIndexes files = do
+    uploadFileIndexes :: [DirectoryDesc] -> NS.SockAddr -> Handler ApiResponse
+    uploadFileIndexes files (NS.SockAddrInet _ nAddress) = do
+      let quadruple = NS.hostAddressToTuple nAddress
       -- Convert each index to document
-      docs <- liftIO $ convertDocs files
+      docs <- liftIO $ convertDocs files $ (tupleToIP quadruple)
       -- Insert each document into DB using insertAll
       liftIO $ withMongoDbConnection (insertAll_ "files" docs )
       -- Send back response
@@ -108,13 +109,16 @@ server = uploadFileIndexes
           -- Remove duplicate paths before sending it back
           return $ DL.nubBy (\ x y -> (fullPath x) == (fullPath y) )fileSummaries
 
-    addFS :: NS.SockAddr -> Handler ApiResponse
-    addFS (NS.SockAddrInet portNumber nAddress) = do
-      let num = PC.toInteger portNumber
-      let quadruple = NS.hostAddressToTuple nAddress
-      let doc = ["address" =: (tupleToIP quadruple), "port" =: num]
-      liftIO $ withMongoDbConnection (insert_ "fileservers" doc)
-      return ApiResponse {result=True, message="Successfully added file server"}
+    addFS :: Maybe Int -> NS.SockAddr -> Handler ApiResponse
+    addFS maybePort (NS.SockAddrInet _ nAddress) = do
+      case maybePort of
+        Nothing -> do
+          return ApiResponse {result=False, message="No port number specified"}
+        Just portNumber -> do
+          let quadruple = NS.hostAddressToTuple nAddress
+          let doc = ["address" =: (tupleToIP quadruple), "port" =: portNumber]
+          liftIO $ withMongoDbConnection (insert_ "fileservers" doc)
+          return ApiResponse {result=True, message="Successfully added file server"}
 
     getFS :: Handler FileServer
     getFS = do
@@ -154,24 +158,38 @@ withMongoDbConnection act = do
   close pipe
   return ret
 
-convertDocs :: [DirectoryDesc] -> IO [Document]
-convertDocs [] = return []
-convertDocs (x:xs) = do
-  converted <- convertToDoc x
-  convertedTail <- convertDocs xs
-  return (converted : convertedTail)
+convertDocs :: [DirectoryDesc] -> String -> IO [Document]
+convertDocs [] _ = return []
+convertDocs (x:xs) ipAddr = do
+  -- Overwrite ip address & port with actual ip and port
+  let dd = DirectoryDesc (dbID x) (fName x) (fLocation x) ipAddr (port x) (modified x)
+  converted <- convertToDoc dd
+  convertedTail <- convertDocs xs ipAddr
+  case converted of
+    Nothing -> do
+      putStrLn "Inconsistent dates, secondary copy discarded"
+      return convertedTail
+    Just convertedDoc -> do
+      return (convertedDoc : convertedTail)
 
 -- Convert DirDesc to Document, but classify file as primary/secondary
-convertToDoc :: DirectoryDesc -> IO Document
+convertToDoc :: DirectoryDesc -> IO (Maybe Document)
 convertToDoc dd = do
   let fNme = T.pack $ fName dd
   let fPth = T.pack $ fLocation dd
-  res <- liftIO $ withMongoDbConnection $ findOne $ select ["name"=:fNme, "path"=:fPth] "files"
+  res <- liftIO $ withMongoDbConnection $ findOne $ select ["name"=:fNme, "path"=:fPth, "primary" =: True] "files"
   case res of
-    Nothing -> return $ dirDescToDoc dd True
-    Just _ -> return $ dirDescToDoc dd False
-
--- Take a list of docs, remove duplicates, use secondary files when available
+    Nothing -> do
+      return $ Just $ dirDescToDoc dd True
+    Just existing ->do
+      -- Check the timestamp for the new doc matches the existing primary
+      let existingDD = docToDirDesc "_id" existing
+      case (modified existingDD) == (modified dd) of
+        True -> do
+          return $ Just $ dirDescToDoc dd False
+        False -> do
+          -- Last modified timestamp does not match primary, discard
+          return Nothing
 
 app :: Application
 app = serve api server

@@ -14,7 +14,6 @@ import Data.Time.Clock
 import Data.Word
 import Database.MongoDB as DDB
 import GHC.Generics
-import Network.Socket
 import Prelude ()
 import Prelude.Compat as PC
 import Servant
@@ -132,11 +131,11 @@ dirDescToSummary fi = FileSummary {fileId=fid, fullPath=p}
     fid = dbID fi
     p = (fLocation fi) ++ (fName fi)
 
-type API = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiResponse
+type API = "new" :> ReqBody '[JSON] [DirectoryDesc] :> RemoteHost :> Post '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] UpdateObject :> Put '[JSON] ApiResponse
          :<|> "resolve" :> ReqBody '[JSON] ResolveRequest :> Post '[JSON] DescRequest
          :<|> "list" :> Get '[JSON] [FileSummary]
-         :<|> "add" :> RemoteHost :> Post '[JSON] ApiResponse
+         :<|> "add" :> QueryParam "port" Int :> RemoteHost :> Post '[JSON] ApiResponse
          :<|> "getFs" :> Get '[JSON] FileServer
          :<|> "delete" :> ReqBody '[JSON] DirectoryDesc :> Delete '[JSON] ApiResponse
          :<|> "getSecondaries" :> QueryParam "path" String :> Get '[JSON] DescsRequest
