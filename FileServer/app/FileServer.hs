@@ -196,28 +196,28 @@ server pn adr = uploadNewFile
           withMongoDbConnection $ replace (select ["name" =: (TL.toStrict fname), "path" =: (TL.toStrict fpath)] "files") (fileIndexToDoc fIndex)
           return ApiResponse {result=True, message="File successfully updated"}
 
-    getFile :: Maybe String -> Handler FileObject
+    getFile :: Maybe String -> Handler (Either ApiResponse FileObject)
     getFile mp = case mp of
       Nothing -> liftIO $ do
         putStrLn "Path not specified"
-        return FileObject {path="", fileContent="Path not specified"}
+        return $ Left $ ApiResponse False "Path not specified"
       Just p -> liftIO $ do
         putStrLn "Getting file: "
         let (fp, f) = splitFullPath (TL.pack p)
         maybeDoc <- withMongoDbConnection $ findOne $ select ["name" =: (TL.toStrict f), "path" =: (TL.toStrict fp)] "files"
         case maybeDoc of
           Nothing -> do
-            return FileObject {path="", fileContent="File not Found"}
+            return $ Left $ ApiResponse False "Document listing not found"
           Just doc -> do
             let actualPath = "static-files" ++ p
             let fi = docToFileIndex doc
             pathExists <- doesFileExist actualPath
             case pathExists of
               False -> do
-                return $ FileObject {path="", fileContent="File Not Found"}
+                return $ Left $ ApiResponse False "File not found"
               True -> do
                 txt <- TLIO.readFile actualPath
-                return $ FileObject p txt (lastModified fi)
+                return $ Right $ FileObject p txt (lastModified fi)
 
     closeFile :: FileObject -> Handler ApiResponse
     closeFile fObject = do
