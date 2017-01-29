@@ -22,6 +22,7 @@ library
                      , aeson
                      , MissingH
                      , mongoDB
+                     , network
                      , servant-server
                      , text >= 1.2
                      , time
@@ -38,6 +39,7 @@ executable DirectoryServer
                      , directory
                      , DirectoryServer
                      , mongoDB
+                     , network
                      , random >= 1.1
                      , resourcet >= 1.1
                      , servant-server >= 0.8

@@ -17,6 +17,7 @@ import Control.Monad.Trans.Resource
 import qualified Data.List as DL
 import qualified Data.Text as T
 import Database.MongoDB
+import qualified Network.Socket as NS
 import Network.Wai.Handler.Warp
 import Network.Wai
 import Prelude ()
@@ -107,9 +108,11 @@ server = uploadFileIndexes
           -- Remove duplicate paths before sending it back
           return $ DL.nubBy (\ x y -> (fullPath x) == (fullPath y) )fileSummaries
 
-    addFS :: FileServer -> Handler ApiResponse
-    addFS fs = do
-      let doc = fServerToDoc fs
+    addFS :: NS.SockAddr -> Handler ApiResponse
+    addFS (NS.SockAddrInet portNumber nAddress) = do
+      let num = PC.toInteger portNumber
+      let quadruple = NS.hostAddressToTuple nAddress
+      let doc = ["address" =: (tupleToIP quadruple), "port" =: num]
       liftIO $ withMongoDbConnection (insert_ "fileservers" doc)
       return ApiResponse {result=True, message="Successfully added file server"}
 

@@ -11,8 +11,10 @@ import Data.Bson
 import Data.List.Utils as DLU
 import Data.Text as T
 import Data.Time.Clock
+import Data.Word
 import Database.MongoDB as DDB
 import GHC.Generics
+import Network.Socket
 import Prelude ()
 import Prelude.Compat as PC
 import Servant
@@ -134,7 +136,15 @@ type API = "new" :> ReqBody '[JSON] [DirectoryDesc] :> Post '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] UpdateObject :> Put '[JSON] ApiResponse
          :<|> "resolve" :> ReqBody '[JSON] ResolveRequest :> Post '[JSON] DescRequest
          :<|> "list" :> Get '[JSON] [FileSummary]
-         :<|> "add" :> ReqBody '[JSON] FileServer :> Post '[JSON] ApiResponse
+         :<|> "add" :> RemoteHost :> Post '[JSON] ApiResponse
          :<|> "getFs" :> Get '[JSON] FileServer
          :<|> "delete" :> ReqBody '[JSON] DirectoryDesc :> Delete '[JSON] ApiResponse
          :<|> "getSecondaries" :> QueryParam "path" String :> Get '[JSON] DescsRequest
+
+tupleToIP :: (Word8, Word8, Word8, Word8) -> String
+tupleToIP (a,b,c,d) = T.unpack $ intercalate "." [a', b', c', d']
+  where
+    a' = T.pack $ show a
+    b' = T.pack $ show b
+    c' = T.pack $ show c
+    d' = T.pack $ show d

@@ -297,8 +297,7 @@ runServer portNo dirServerAddress dirServerPort = do
   liftIO $ withMongoDbConnection $ do
     -- Send fileserver details to Directory server
     manager <- liftIO $ HPC.newManager HPC.defaultManagerSettings -- Get a HTTP manager
-    let fs = FileServer {address="127.0.0.1", portNum=portNo}
-    resp <- liftIO $ runClientM (addRequest fs) (ClientEnv manager (url dirServerAddress dirServerPort))
+    resp <- liftIO $ runClientM addRequest (ClientEnv manager (url dirServerAddress dirServerPort))
     case resp of
       Left err -> liftIO $ putStrLn $ "Error adding file server to directory server: \n" ++ show err
       Right res -> liftIO $ putStrLn $ show (message res)
@@ -340,7 +339,7 @@ massRunClient (x:xs) action manager = do
 
 upload :: [DirectoryDesc] -> ClientM ApiResponse
 update :: UpdateObject -> ClientM ApiResponse
-add :: FileServer -> ClientM ApiResponse
+add :: ClientM ApiResponse
 deleteDD :: DirectoryDesc -> ClientM ApiResponse
 getSecondaries :: Maybe String -> ClientM (Either ApiResponse [DirectoryDesc])
 
@@ -354,9 +353,9 @@ postRequest postList = do
   res <- upload postList
   return res
 
-addRequest :: FileServer -> ClientM ApiResponse
-addRequest fs = do
-  res <- add fs
+addRequest :: ClientM ApiResponse
+addRequest = do
+  res <- add
   return res
 
 deleteRequest :: DirectoryDesc -> ClientM ApiResponse
