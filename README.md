@@ -77,8 +77,11 @@ When a file is closed, the fileserver hosting the primary copy immediately retri
 Please note, when running the system there will be problems deleting replicated files if two or more fileservers are sharing the same mongoDB database. This stems from the fact two file servers try to remove the same document from the database twice, so the second attempt fails.
 
 ## TODO
-* Auto update client list of files on post/delete
-* GET from fileserver should have a response type (Either ApiResponse FileObject)
+* ~~Coloured Terminal Prompts~~
+* ~~Remove duplicate items from available files list on client~~
+* ~~Auto retrieve list of files on the client from Directory Server~~
+* ~~Auto update client list of files on post/delete~~
+* ~~GET from fileserver should have a response type (Either ApiResponse FileObject)~~
 * New Type for (Either ApiResponse FileObject)
 * Fileservers should find out their own ip for use by Directory server
 * Directory server should ensure duplicate files have the same timestamp as primary on entry
