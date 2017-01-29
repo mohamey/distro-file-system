@@ -27,7 +27,7 @@ remove :: ObjIdentifier -> ClientM ApiResponse
 update :: FileObject -> ClientM ApiResponse
 closeF :: FileObject -> ClientM ApiResponse
 openF :: Maybe String -> ClientM (Either ApiResponse FileObject)
-get :: Maybe String -> ClientM FileObject
+get :: Maybe String -> ClientM (Either ApiResponse FileObject)
 list :: ClientM [ObjIdentifier]
 
 papi :: DP.Proxy API
@@ -36,7 +36,7 @@ papi = DP.Proxy
 upload :<|> remove :<|> update :<|> closeF :<|> openF :<|> get :<|> list = client papi
 
 -- Write queries to be performed
-getRequest :: String -> ClientM FileObject
+getRequest :: String -> ClientM (Either ApiResponse FileObject)
 getRequest reqPath = do
   fi <- get (Just reqPath)
   return fi
@@ -108,17 +108,40 @@ parseCommand "get" (p:_) adr env cache = do
           putStrLn $ redCode ++ "Failed to retrieve file details from the directory server"
           prompt env cache adr
         Just dd -> do
-          -- Query the returned file server for the file
-          rres <- runClientM (getRequest (fLocation dd ++ "/" ++ fName dd)) (ClientEnv manager (url (fileServer dd) (port dd)))
-          case rres of
-            Left err -> do
-              putStrLn $ redCode ++  "Error retrieving file from file server:\n" ++ show err
-              prompt env cache adr
-            Right x -> do
-              putStrLn $ greenCode ++ "File Retrieved: " ++ resetCode
-              putStrLn (show $ fileContent x)
-              writeFile (path x) (TL.unpack $ fileContent x)
-              prompt env cache adr
+          -- Check if there is a cached copy and if it's up to date
+          case Map.lookup (TL.pack p) cache of
+            Nothing -> do
+              -- Query the returned file server for the file
+              maybeContents <- runGetRequest (fLocation dd ++ "/" ++ fName dd) (url (fileServer dd) (port dd))
+              case maybeContents of
+                Nothing -> do
+                  prompt env cache adr
+                Just (f, t) -> do
+                  putStrLn $ TL.unpack f
+                  writeFile ("static-files" ++ p) (TL.unpack f)
+                  writeFile ("cache" ++ p) (TL.unpack f)
+                  let newCache = Map.insert (TL.pack p) t cache
+                  prompt env newCache adr
+            Just timestamp -> do
+              let remoteTimestamp = modified dd
+              if timestamp <= remoteTimestamp then do
+                -- Cache copy up to date, print it
+                putStrLn $ blueCode ++ "Cached copy up to date, opening..."
+                contents <- TLIO.readFile $ "cache" ++ p
+                putStrLn $ whiteCode ++ (TL.unpack contents)
+                prompt env cache adr
+              else do
+                maybeContents <- runGetRequest (fLocation dd ++ "/" ++ fName dd) (url (fileServer dd) (port dd))
+                case maybeContents of
+                  Nothing -> do
+                    prompt env cache adr
+                  Just (f, t) -> do
+                    putStrLn $ TL.unpack f
+                    writeFile ("static-files" ++ p) (TL.unpack f)
+                    writeFile ("cache" ++ p) (TL.unpack f)
+                    let nCache = Map.delete (TL.pack p) cache
+                    let newCache = Map.insert (TL.pack p) t nCache
+                    prompt env newCache adr
 
 parseCommand "post" (f:_) adr env cache = liftIO $ do
   manager <- HPC.newManager HPC.defaultManagerSettings
@@ -234,6 +257,26 @@ parseCommand "open" (p:_) adr env cache = do
           time <- getCurrentTime
           -- Check if file is present in cache
           case Map.lookup (TL.pack p) cache of
+            Nothing -> do
+              putStrLn $ blueCode ++ "No cache entry found, retrieving file"
+              maybeFileObj <- runOpenRequest (fLocation dd ++ fName dd) fsUrl
+              case maybeFileObj of
+                Nothing -> do
+                  prompt env cache adr
+                Just x -> do
+                  -- Write the received file locally
+                  let (cp, _) = splitFullPath $ TL.pack cachePth
+                  createDirectoryIfMissing True (TL.unpack cp)
+                  TLIO.writeFile cachePth (fileContent x)
+                  -- Now open the file in text editor
+                  _ <- editFile "vim" cachePth
+                  -- Update cache to save file details
+                  let newCache = Map.insert (TL.pack p) time cache
+                  -- Update the file at the fileserver
+                  f <- TLIO.readFile cachePth
+                  let fObject = FileObject p f time
+                  _ <- runCloseRequest fObject fsUrl
+                  prompt env newCache adr
             Just timestamp -> do
               -- Get timestamp of remote primary file
               putStrLn $ blueCode ++ "Cache listing found"
@@ -263,26 +306,6 @@ parseCommand "open" (p:_) adr env cache = do
                       let fObject = FileObject p f time
                       _ <- runCloseRequest fObject fsUrl
                       prompt env newCache adr
-            Nothing -> do
-              putStrLn $ blueCode ++ "No cache entry found, retrieving file"
-              maybeFileObj <- runOpenRequest (fLocation dd ++ fName dd) fsUrl
-              case maybeFileObj of
-                Nothing -> do
-                  prompt env cache adr
-                Just x -> do
-                  -- Write the received file locally
-                  let (cp, _) = splitFullPath $ TL.pack cachePth
-                  createDirectoryIfMissing True (TL.unpack cp)
-                  TLIO.writeFile cachePth (fileContent x)
-                  -- Now open the file in text editor
-                  _ <- editFile "vim" cachePth
-                  -- Update cache to save file details
-                  let newCache = Map.insert (TL.pack p) time cache
-                  -- Update the file at the fileserver
-                  f <- TLIO.readFile cachePth
-                  let fObject = FileObject p f time
-                  _ <- runCloseRequest fObject fsUrl
-                  prompt env newCache adr
 
 parseCommand "list" _  adr env cache = liftIO $ do
   maybeEnv <- getListing adr
@@ -388,3 +411,18 @@ runOpenRequest fl adr = do
           return Nothing
         Right x -> do
           return $ Just x
+
+runGetRequest :: String -> BaseUrl -> IO (Maybe (TL.Text, UTCTime))
+runGetRequest fPth adr = do
+  manager <- HPC.newManager HPC.defaultManagerSettings
+  rres <- runClientM (getRequest fPth) (ClientEnv manager adr)
+  case rres of
+    Left err -> do
+      putStrLn $ redCode ++  "Error retrieving file from file server:\n" ++ show err
+      return Nothing
+    Right (Left res) -> do
+      putStrLn $ redCode ++ "Error:" ++ (message res)
+      return Nothing
+    Right (Right x) -> do
+      putStrLn $ greenCode ++ "File Retrieved: " ++ resetCode
+      return $ Just ((fileContent x), modifiedLast x)

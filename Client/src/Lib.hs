@@ -119,7 +119,7 @@ type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
          :<|> "close" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
          :<|> "open" :> QueryParam "path" String :> Get '[JSON] (Either ApiResponse FileObject)
-         :<|> "files" :> QueryParam "path" String :> Get '[JSON] FileObject
+         :<|> "files" :> QueryParam "path" String :> Get '[JSON] (Either ApiResponse FileObject)
          :<|> "list" :> Get '[JSON] [ObjIdentifier]
 
 type DSAPI ="resolve" :> ReqBody '[JSON] ResolveRequest :> Post '[JSON] (Either ApiResponse DirectoryDesc)
