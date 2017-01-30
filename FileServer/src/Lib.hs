@@ -153,21 +153,13 @@ docToDirDesc ip portNo doc = DirectoryDesc (unescape fid) (unescape fn) (unescap
     fl = show $ valueAt "path" doc
     timeStamp = read (show $ valueAt "modified" doc) :: UTCTime
 
--- data FileServer = FileServer {
---   address :: String,
---   portNum :: Int
--- } deriving Generic
-
--- instance ToJSON FileServer
--- instance FromJSON FileServer
-
 -- The API Definition
 type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "remove" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
          :<|> "removeSec" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
          :<|> "close" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
-         :<|> "open" :> QueryParam "path" String :> Get '[JSON] FileRequest
+         :<|> "lock" :> QueryParam "path" String :> Get '[JSON] ApiResponse
          :<|> "files" :> QueryParam "path" String :> Get '[JSON] FileRequest
          :<|> "list" :> Get '[JSON] [ObjIdentifier]
 

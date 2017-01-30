@@ -37,7 +37,7 @@ server pn adr = uploadNewFile
               :<|> deleteSecondary
               :<|> updateFile
               :<|> closeFile
-              :<|> openFile
+              :<|> lockFile
               :<|> getFile
               :<|> listFiles
 
@@ -248,39 +248,40 @@ server pn adr = uploadNewFile
               -- Call function to update file
               updateFile newFObject
 
-    openFile :: Maybe String -> Handler FileRequest
-    openFile mp = do
+    lockFile :: Maybe String -> Handler ApiResponse
+    lockFile mp = do
       case mp of
         Nothing -> do
           liftIO $ putStrLn "path not specified"
-          return $ Left ApiResponse {result=False, message="File path not specified"}
+          return ApiResponse {result=False, message="File path not specified"}
         Just p -> do
-          liftIO $ putStrLn "Getting the file"
           let actualPath = "static-files" ++ p
           fileExists <- liftIO $ doesFileExist actualPath
           case fileExists of
             False -> do
-              return $ Left ApiResponse {result=False, message="File not found on file server"}
+              return ApiResponse {result=False, message="File not found on file server"}
             True -> do
               -- Check the DB to make sure its not open
-              maybeDoc <- liftIO $ withMongoDbConnection (findOne $ select ["path" =: p] "openFiles")
+              maybeDoc <- liftIO $ withMongoDbConnection (findOne $ select ["path" =: (T.pack p)] "openFiles")
               case maybeDoc of
-                Just _ -> return $ Left ApiResponse {result=False, message="File already opened by another client"}
+                Just _ -> return ApiResponse {result=False, message="File already opened by another client"}
                 Nothing -> do
-                  fContent <- liftIO $ TLIO.readFile actualPath
-                  -- Get files time
-                  let (fp, f) = splitFullPath (TL.pack p)
-                  mDoc <- liftIO $ withMongoDbConnection $ findOne $ select ["name" =: (TL.toStrict f), "path" =: (TL.toStrict fp)] "files"
-                  case mDoc of
-                    Nothing -> do
-                      return $ Left $ ApiResponse False "File listing not found in database"
-                    Just doc -> do
-                      let fi = docToFileIndex doc
-                      -- Add file path to list of open files
-                      liftIO $ putStrLn p
-                      liftIO $ withMongoDbConnection (insert_ "openFiles" ["path" =: p])
-                      -- Send file back to Client
-                      return $ Right FileObject{path=p, fileContent=fContent, modifiedLast=(lastModified fi)}
+                  liftIO $ withMongoDbConnection $ insert_ "openFiles" ["path" =: p]
+                  return $ ApiResponse True "Lock available"
+                  -- fContent <- liftIO $ TLIO.readFile actualPath
+                  -- -- Get files time
+                  -- let (fp, f) = splitFullPath (TL.pack p)
+                  -- mDoc <- liftIO $ withMongoDbConnection $ findOne $ select ["name" =: (TL.toStrict f), "path" =: (TL.toStrict fp)] "files"
+                  -- case mDoc of
+                  --   Nothing -> do
+                  --     return $ Left $ ApiResponse False "File listing not found in database"
+                  --   Just doc -> do
+                  --     let fi = docToFileIndex doc
+                  --     -- Add file path to list of open files
+                  --     liftIO $ putStrLn p
+                  --     liftIO $ withMongoDbConnection (insert_ "openFiles" ["path" =: p])
+                  --     -- Send file back to Client
+                  --     return $ Right FileObject{path=p, fileContent=fContent, modifiedLast=(lastModified fi)}
 
     listFiles :: Handler [ObjIdentifier]
     listFiles = liftIO $ do
