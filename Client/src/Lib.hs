@@ -121,7 +121,7 @@ type API = "upload" :> ReqBody '[JSON] FileObject :> Post '[JSON] ApiResponse
          :<|> "remove" :> ReqBody '[JSON] ObjIdentifier :> Delete '[JSON] ApiResponse
          :<|> "update" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
          :<|> "close" :> ReqBody '[JSON] FileObject :> Put '[JSON] ApiResponse
-         :<|> "open" :> QueryParam "path" String :> Get '[JSON] FileRequest
+         :<|> "lock" :> QueryParam "path" String :> Get '[JSON] ApiResponse
          :<|> "files" :> QueryParam "path" String :> Get '[JSON] FileRequest
          :<|> "list" :> Get '[JSON] [ObjIdentifier]
 
