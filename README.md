@@ -4,8 +4,10 @@ A distributed file system written in haskell using the servant library and based
 * FileServer and Client
 * Directory Server
 * Replication
+* Caching
+* Locking
 
-The Distributed File System behaves like files are on a single file server, and the fragmentation of files being on different file servers is abstracted by the directory server.
+The Distributed File System behaves like files are on a single file system, and the fragmentation of files being on different file servers is abstracted by the directory server. At the moment text files can be stored on the server.
 
 ## Requirements
 * MongoDB
@@ -76,6 +78,18 @@ When a file is closed, the fileserver hosting the primary copy immediately retri
 
 Please note, when running the system there will be problems deleting replicated files if two or more fileservers are sharing the same mongoDB database. This stems from the fact two file servers try to remove the same document from the database twice, so the second attempt fails.
 
+### Caching
+The Distributed File System currently supports caching, where files that are retrieved from any of the file servers are cached. Since the distributed file system only supports text files, there are no checks to make sure the cache directory becomes too big.
+
+The distributed file system makes sure cached files are only used if they're up to date. To do so each cached file is given a timestamp representing the last time the file was modified, and on each cached file access the directory server is queried for the primary copy's timestamp and both are compared. If the cached copy's timestamp is newer or the same as the remote primary copy, access is granted. Otherwise, the primary copy is downloaded and cached.
+
+### Locking
+I opted not to implement a seperate locking server in this project. Since file replication is handled using primary and secondary file copies, only the primary copy of a file should ever be modified. This is the file a lock must be obtained for. To manage the locking of files, each file server is responsible for allocating locks to users.
+
+This works because actions from the client that will modify the primary copy must first obtain a lock from whichever file server is being queried, and the fileserver keeps track of its locks. If a file has already been locked by another user, whatever operation that was performed by the client requesting a lock for the file will fail.
+
+Provided files are only modified using the provided client, this locking service should effectively manage writing to files on the fileserver.
+
 ## TODO
 * ~~Coloured Terminal Prompts~~
 * ~~Remove duplicate items from available files list on client~~
@@ -86,3 +100,4 @@ Please note, when running the system there will be problems deleting replicated 
 * ~~Fileservers should find out their own ip for use by Directory server~~ (Directory Server gets fileserver ip & port from request details)
 * ~~Directory server should ensure duplicate files have the same timestamp as primary on entry~~
 * ~~Lock should be acquired before client can edit cached copy of file~~
+* Lock should be acquired before client can perform a PUT operation
